@@ -475,3 +475,28 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
 回归测试：`tests/test_advice_engine.py` 里的 `test_wake_date_cannot_be_tomorrow_even_if_sleeping_today`
 与 `test_derived_wake_date_cannot_be_tomorrow_either`；另外 `test_checkin_writes_back_to_the_meal_day_record`
 改成用"昨天那一夜"当被打卡的那天，因为"今天入睡、明天起床"已经不再允许。
+
+## 时间选择：可滚动的圆筒（2026-11）
+
+`frontend/shared/timepicker.js` 里的 `createTimePicker()` 现在渲染的是两列圆筒，
+不再是「上下箭头 + 单个数字」。要点：
+
+- **结构**：`buildDrum()` 造 `.time-drum > .time-drum-track > .time-drum-item`，
+  每列把数值渲染 `REPEAT = 3` 份；滚到复制出来的首/尾份时，`settle()` 瞬间把
+  `scrollTop` 换回中间那份——内容一模一样，所以看不出跳，23 的下面就是 00、
+  59 的下面就是 00。
+- **行高不能用常量**：行高来自 CSS 变量 `--drum-row`（桌面 36px，`≤620px` 40px）。
+  JS 全部用实测的 `item.offsetHeight` / `item.offsetTop` 来算，否则高亮行会比
+  隐藏读数偏两格（`offsetTop` 已经包含 track 的上内边距，别再乘索引）。
+- **不要用 CSS `scroll-snap`**：它和「停 110ms 后再对齐」的 JS 逻辑会互相打架，
+  实测 `scrollTop` 会停在 803 这种非整数位置，值和视觉对不上。现在只在 CSS 里
+  保留 `scroll-behavior: auto`，对齐完全交给 JS。
+- **视觉**：每项按离中线的距离算 `rotateX(±58deg)`、`translateZ(0~5px)`、
+  透明度 `1 → 0.34`；中间固定一条 `.time-drum-band` 标出当前行，上下两端用
+  `mask-image` 淡出。选中的那一行是正文色，越远越淡。
+- **读数给谁看**：`.time-a11y` 里仍有 `[data-role="hour-value"]` /
+  `[data-role="minute-value"]`（读屏和验收探针都靠它），圆筒本体带
+  `role="listbox"` / `role="option"`，键盘 ↑↓、PageUp/PageDown、Home/End 都能用。
+- **文案**：`time.rollHint` 改成「上下滑动选择 / Swipe to pick」，`time.stepHint`
+  不再出现在界面上（箭头按钮已经删掉）。
+

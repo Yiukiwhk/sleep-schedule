@@ -330,73 +330,106 @@ table.table td.actions { white-space: nowrap; text-align: right; }
 
 .loading { padding: 24px; text-align: center; color: var(--text-muted); }
 
-/* ==========================  闹钟式时间选择器  ========================== */
+/* ==========================  闹钟式时间选择器（圆筒）  ========================== */
 
 .time-wheel {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: 6px;
+  width: fit-content;
+  margin-inline: auto;
+  padding: 10px 16px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  --drum-row: 36px;
 }
 
-.time-wheel-cols { display: flex; align-items: center; gap: 2px; }
+.time-wheel-cols { display: flex; align-items: center; gap: 4px; }
 
-.time-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.time-col { display: flex; align-items: center; }
 
-.time-spin {
-  width: 44px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
+.time-drum-wrap { position: relative; display: flex; }
+
+/* 真正的滚动容器：竖向 scroll-snap，藏掉滚动条，上下用蒙版淡出 */
+.time-drum {
+  position: relative;
+  width: 58px;
+  height: calc(var(--drum-row) * 5);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+  perspective: 320px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
 }
-.time-spin:hover { background: var(--bg-hover); color: var(--text); }
+.time-drum::-webkit-scrollbar { display: none; }
+.time-drum:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 
-.time-value {
-  width: 56px;
-  height: 46px;
+/* 上下各留两行，首尾才能滚到中间 */
+.time-drum-track { padding: calc(var(--drum-row) * 2) 0; transform-style: preserve-3d; }
+
+.time-drum-item {
+  height: var(--drum-row);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  cursor: grab;
+  color: var(--text-soft);
+  transform-origin: center center;
+  will-change: transform, opacity;
   user-select: none;
-  touch-action: none;
+  cursor: pointer;
 }
-.time-value:active { cursor: grabbing; }
-.time-value.scrollable { cursor: ns-resize; }
+.time-drum-item.is-active { color: var(--text); font-weight: 600; }
 
-.time-sep { font-size: 22px; font-weight: 600; color: var(--text-muted); padding: 0 2px; }
+/* 中间那条选中带：只做视觉，不吃事件 */
+.time-drum-band {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: calc(var(--drum-row) + 4px);
+  transform: translateY(-50%);
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.time-sep { font-size: 22px; font-weight: 600; color: var(--text-muted); padding: 0 1px; }
+
+/* 读数只给读屏和验收脚本看 */
+.time-a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 .time-wheel-foot {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-left: 6px;
-  border-left: 1px solid var(--border);
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 .time-wheel-hint { font-size: 11px; color: var(--text-muted); }
 
 /* 未设置（可选时间为空）时的弱化显示 */
-.time-wheel.is-empty .time-value,
-.time-wheel.is-empty .time-sep { color: var(--text-muted); }
+.time-wheel.is-empty .time-drum-item.is-active { color: var(--text-muted); }
+.time-wheel.is-empty .time-sep { color: var(--text-muted); opacity: 0.5; }
 
 /* ==========================  主题 / 语言切换  ========================== */
 
@@ -424,7 +457,6 @@ table.table td.actions { white-space: nowrap; text-align: right; }
   flex: none;
 }
 .icon-btn .ic { width: 17px; height: 17px; }
-.time-spin .ic { width: 12px; height: 12px; }
 
 .lang-switch {
   display: inline-flex;

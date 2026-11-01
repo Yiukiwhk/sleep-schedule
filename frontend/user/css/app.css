@@ -1271,6 +1271,12 @@ input[type="date"]:focus::-webkit-calendar-picker-indicator { opacity: 1; }
   .dp-title { font-size: 14px; }
   .dp-month { padding: 12px 0; font-size: 14px; }
 
+  /* 圆筒时间：行高放大到 40px，手指拖起来更好对位 */
+  .time-wheel { --drum-row: 40px; gap: 8px; padding: 6px 8px; }
+  .time-drum { width: 62px; }
+  .time-drum-item { font-size: 24px; }
+  .time-wheel-foot { padding-left: 8px; }
+
   /* 手指目标：主要控件不低于 40px */
   .btn,
   .segment-btn,

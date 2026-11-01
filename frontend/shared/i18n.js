@@ -56,8 +56,8 @@ export const DICTS = {
 
     "time.hour": "时",
     "time.minute": "分",
-    "time.rollHint": "上下滚动或拖动",
-    "time.stepHint": "点击箭头微调",
+    "time.rollHint": "上下滑动选择",
+    "time.stepHint": "也可以点数字直接跳",
 
     "login.title": "登录",
     "login.subtitle": "请使用管理员分配的账号登录",
@@ -596,8 +596,8 @@ export const DICTS = {
 
     "time.hour": "HH",
     "time.minute": "MM",
-    "time.rollHint": "Scroll or drag",
-    "time.stepHint": "Use arrows to adjust",
+    "time.rollHint": "Swipe to pick",
+    "time.stepHint": "Or tap a number to jump",
 
     "login.title": "Sign in",
     "login.subtitle": "Use the account created by your administrator",

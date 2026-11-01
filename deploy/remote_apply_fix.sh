@@ -552,6 +552,16 @@ grep_file "date-picker.js: title opens the month grid" "$WEBROOT/user/js/date-pi
 grep_file "date-picker.js: month cells exist" "$WEBROOT/user/js/date-picker.js" 'data-dp-month'
 grep_file "app.css: the month grid is styled" "$WEBROOT/user/css/app.css" '.dp-months'
 
+echo "== 4ag. the time picker is a scrollable drum =="
+grep_file "timepicker.js: rows are drum items" "$WEBROOT/shared/timepicker.js" 'time-drum-item'
+grep_file "timepicker.js: the drum wraps around" "$WEBROOT/shared/timepicker.js" 'valueIndex('
+grep_file "timepicker.js: row height is measured" "$WEBROOT/shared/timepicker.js" 'offsetHeight'
+grep_file "base.css: the drum container is styled" "$WEBROOT/shared/base.css" '.time-drum {'
+grep_file "base.css: the selection band exists" "$WEBROOT/shared/base.css" '.time-drum-band'
+grep_file "app.css: the phone row is taller" "$WEBROOT/user/css/app.css" '--drum-row: 40px'
+grep_file "i18n: the hint says swipe" "$WEBROOT/shared/i18n.js" '上下滑动选择'
+grep_absent "base.css: no leftover spin buttons" "$WEBROOT/shared/base.css" '.time-spin'
+
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"
 else
