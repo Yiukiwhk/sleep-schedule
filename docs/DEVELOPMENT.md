@@ -367,6 +367,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
   既不在弹层里、也不是 `.date-field`，于是把这次点击当成外部点击把弹层关掉（表现为
   “左右箭头点了没反应”）。文档监听里再用 `event.composedPath()` 兜一道：路径在事件
   派发时就固定了，重画后仍然包含弹层。
+- 点标题（`.dp-title`）在“日历”和“月份格”之间切换：月份格是 4×3 的 12 个月，左右箭头
+  换年份，点某个月回到那个月的日历。跨好几月时不用一个月一个月点箭头。月份格不查绿点，
+  `paint()` 在 `mode !== "day"` 时直接返回，省一次请求。
 ## 图标：内联 SVG 与 data-icon
 
 - 界面里的图标不再用 emoji。emoji 的颜色写死在字形里（深色主题改不动）、不同系统字形不同、

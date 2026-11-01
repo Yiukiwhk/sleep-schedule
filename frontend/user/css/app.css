@@ -1203,7 +1203,13 @@ input[type="date"]:focus::-webkit-calendar-picker-indicator { opacity: 1; }
 .date-field-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dp { position: fixed; z-index: 99999; padding: 10px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-raised); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); }
 .dp-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
-.dp-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.02em; }
+.dp-title { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; cursor: pointer; }
+.dp-title:hover { background: rgba(127, 127, 127, 0.16); }
+.dp-title .ic { width: 12px; height: 12px; color: var(--text-soft); }
+.dp-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 2px 0 4px; }
+.dp-month { padding: 10px 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.dp-month:hover { background: rgba(127, 127, 127, 0.18); }
+.dp-month.is-current { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .dp-nav { width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text-soft); font-size: 15px; line-height: 1; cursor: pointer; }
 .dp-nav:hover { color: var(--text); border-color: var(--border-strong); }
 .dp-week, .dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
@@ -1260,8 +1266,10 @@ input[type="date"]:focus::-webkit-calendar-picker-indicator { opacity: 1; }
   .input,
   textarea,
   select,
-  .date-field-btn,
-  .dp-title { font-size: 16px; }
+  .date-field-btn { font-size: 16px; }
+  /* 日历里的标题和月份格不是输入框，不用跟着放大；手指目标靠高度撑 */
+  .dp-title { font-size: 14px; }
+  .dp-month { padding: 12px 0; font-size: 14px; }
 
   /* 手指目标：主要控件不低于 40px */
   .btn,

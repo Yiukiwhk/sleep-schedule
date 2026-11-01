@@ -548,6 +548,9 @@ echo "== 4af. the calendar arrows can change the month =="
 grep_file "date-picker.js: month arrows stop propagation" "$WEBROOT/user/js/date-picker.js" 'event.stopPropagation();'
 grep_file "date-picker.js: outside clicks use composedPath" "$WEBROOT/user/js/date-picker.js" 'composedPath'
 grep_file "date-picker.js: month view still has nav buttons" "$WEBROOT/user/js/date-picker.js" 'data-dp-move'
+grep_file "date-picker.js: title opens the month grid" "$WEBROOT/user/js/date-picker.js" 'data-dp-title'
+grep_file "date-picker.js: month cells exist" "$WEBROOT/user/js/date-picker.js" 'data-dp-month'
+grep_file "app.css: the month grid is styled" "$WEBROOT/user/css/app.css" '.dp-months'
 
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"

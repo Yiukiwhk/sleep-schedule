@@ -17,6 +17,11 @@ const WD_LABEL = {
   en: ["S", "M", "T", "W", "T", "F", "S"],
 };
 
+const MONTH_LABEL = {
+  "zh-CN": ["1 月", "2 月", "3 月", "4 月", "5 月", "6 月", "7 月", "8 月", "9 月", "10 月", "11 月", "12 月"],
+  en: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+};
+
 function locale() {
   const value = String(document.documentElement.lang || "zh-CN").toLowerCase();
   return value.startsWith("en") ? "en" : "zh-CN";
@@ -99,6 +104,8 @@ function buildPopover(field, input, { min, max }) {
   const selected = parseIso(input.value) || new Date();
   let viewYear = selected.getFullYear();
   let viewMonth = selected.getMonth() + 1;
+  // "day" 是普通日历；"month" 是点标题展开的月份格，用来快速跳月。
+  let mode = "day";
 
   const rect = field.getBoundingClientRect();
   const width = 268;
@@ -150,9 +157,33 @@ function buildPopover(field, input, { min, max }) {
       .join("");
 
     const labels = WD_LABEL[locale()] || WD_LABEL["zh-CN"];
+
+    if (mode === "month") {
+      const names = MONTH_LABEL[locale()] || MONTH_LABEL["zh-CN"];
+      const months = names
+        .map((name, index) => {
+          const month = index + 1;
+          const classes = ["dp-month"];
+          if (month === viewMonth) classes.push("is-current");
+          return `<button type="button" class="${classes.join(" ")}" data-dp-month="${month}">${escapeHtml(
+            name
+          )}</button>`;
+        })
+        .join("");
+      box.innerHTML = `<div class="dp-head">
+        <button type="button" class="dp-nav" data-dp-year="-1" aria-label="prev year">${iconSvg("chevron-left")}</button>
+        <button type="button" class="dp-title" data-dp-title aria-label="${viewYear}">${viewYear}</button>
+        <button type="button" class="dp-nav" data-dp-year="1" aria-label="next year">${iconSvg("chevron-right")}</button>
+      </div>
+      <div class="dp-months">${months}</div>`;
+      return;
+    }
+
     box.innerHTML = `<div class="dp-head">
         <button type="button" class="dp-nav" data-dp-move="-1" aria-label="prev">${iconSvg("chevron-left")}</button>
-        <span class="dp-title">${viewYear}.${pad(viewMonth)}</span>
+        <button type="button" class="dp-title" data-dp-title aria-label="${viewYear}.${pad(viewMonth)}">${viewYear}.${pad(
+          viewMonth
+        )}${iconSvg("caret-down")}</button>
         <button type="button" class="dp-nav" data-dp-move="1" aria-label="next">${iconSvg("chevron-right")}</button>
       </div>
       <div class="dp-week">${labels.map((text) => `<span>${escapeHtml(text)}</span>`).join("")}</div>
@@ -161,18 +192,22 @@ function buildPopover(field, input, { min, max }) {
 
   async function paint() {
     render();
+    // 月份格不用查绿点，省一次请求。
+    if (mode !== "day") return;
     markings = await markedOf(viewYear, viewMonth);
-    if (active !== box) return;
+    if (active !== box || mode !== "day") return;
     render();
   }
 
   box.addEventListener("click", (event) => {
+    // 弹层里的点击一律不冒泡：翻月、换模式都会立刻重画 innerHTML，被点的元素随即
+    // 脱离文档，文档级的“点外面就关”会把它当成外部点击，把弹层关掉
+    // （左右箭头曾经点了完全没反应，就是这个原因）。
+    event.stopPropagation();
+
     const nav = event.target.closest?.("[data-dp-move]");
     if (nav) {
-      // 翻月会立刻重画 innerHTML，被点的按钮就从文档里摘掉了；如果不拦住冒泡，
-      // 文档上的「点外面关闭」会把这次点击当成外部点击，弹层直接消失。
       event.preventDefault();
-      event.stopPropagation();
       viewMonth += Number(nav.dataset.dpMove);
       if (viewMonth < 1) {
         viewMonth = 12;
@@ -184,6 +219,33 @@ function buildPopover(field, input, { min, max }) {
       paint();
       return;
     }
+
+    const yearNav = event.target.closest?.("[data-dp-year]");
+    if (yearNav) {
+      event.preventDefault();
+      viewYear += Number(yearNav.dataset.dpYear);
+      paint();
+      return;
+    }
+
+    const title = event.target.closest?.("[data-dp-title]");
+    if (title) {
+      event.preventDefault();
+      // 点标题在“日历”和“月份格”之间切换，方便一次跳好几个月。
+      mode = mode === "month" ? "day" : "month";
+      paint();
+      return;
+    }
+
+    const month = event.target.closest?.("[data-dp-month]");
+    if (month) {
+      event.preventDefault();
+      viewMonth = Number(month.dataset.dpMonth);
+      mode = "day";
+      paint();
+      return;
+    }
+
     const day = event.target.closest?.("[data-date]");
     if (!day || day.disabled) return;
     input.value = day.dataset.date;
