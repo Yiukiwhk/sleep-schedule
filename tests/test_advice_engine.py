@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -558,6 +558,32 @@ def test_adherence_ignores_unrecorded_days() -> None:
     assert stats["current_streak"] == 2
     assert stats["remaining_days"] == 0
     assert second["date"] not in {advice_service.wake_day_of(record) for record in records}
+
+
+def test_deviation_ignores_records_written_before_the_plan() -> None:
+    """刚生成计划时，早于计划写下的那条记录不能立刻触发"你偏离了"。"""
+    payload = _payload()
+    generated = datetime(TODAY.year, TODAY.month, TODAY.day, 9, 0)
+    payload["generated_at"] = generated.strftime("%Y-%m-%d %H:%M:%S")
+    last = payload["plan"][-1]
+
+    stale = _night(last["date"], "02:00", "10:00")
+    stale.updated_at = generated - timedelta(minutes=30)
+    before = plan_service.deviation(payload, [stale], TODAY)
+    assert before["level"] == "none"
+    assert before["minutes"] == 0
+    assert before["options"] == []
+
+    touched = _night(last["date"], "02:00", "10:00")
+    touched.updated_at = generated + timedelta(minutes=30)
+    after = plan_service.deviation(payload, [touched], TODAY)
+    assert after["level"] == "ask"
+    assert after["minutes"] == 180
+    assert [option["strategy"] for option in after["options"]] == [
+        "postpone",
+        "recompute",
+        "keep",
+    ]
 
 
 def test_deviation_levels() -> None:

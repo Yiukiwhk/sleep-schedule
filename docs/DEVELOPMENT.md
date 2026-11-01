@@ -500,3 +500,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
 - **文案**：`time.rollHint` 改成「上下滑动选择 / Swipe to pick」，`time.stepHint`
   不再出现在界面上（箭头按钮已经删掉）。
 
+## 偏离提示：只算计划生成之后写的记录
+
+重新生成计划后，页面会在下一次打开时按新计划重算 `deviation`。如果直接把最近一次记录拿来比
+（那条记录往往是照着旧作息睡的、而且写在计划之前），就会立刻弹「你偏离了，要不要顺延目标日期」，
+用户点一次顺延、再生成、再顺延，计划永远在往后拖。
+
+`services/advice_plan.py` 的 `deviation()` 现在先取快照里的 `generated_at`（`plan_meta.generated_at`，老快照没有就退回顶层字段），
+只保留 `updated_at >= generated_at` 的记录参与比较；测试里的轻量假记录没有时间戳，按「算新记录」处理，所以单元测试不受影响。
+前端配合一处：`applyState()` 收到 `{ generated: true }` 时把 `deviation` 置空，避免刚生成完还挂着上一份计划的
+偏离状态（POST /api/advice 的响应体本来就不带 deviation）。
+

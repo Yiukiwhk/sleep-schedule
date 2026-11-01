@@ -1228,7 +1228,8 @@ function applyState(body, { generated = false } = {}) {
     plan: payload || null,
     today: body?.today || prev.today || null,
     timeline: body?.timeline || payload?.timeline || prev.timeline || null,
-    deviation: body?.deviation ?? prev.deviation ?? null,
+    // 刚生成的新计划没有 deviation：别把上一份计划的偏离继续挂在页面上
+    deviation: body?.deviation ?? (generated ? null : prev.deviation ?? null),
     adherence: body?.adherence ?? prev.adherence ?? null,
     meal_plan: body?.meal_plan || payload?.meal_plan || prev.meal_plan || null,
     plan_meta: body?.plan_meta || payload?.plan_meta || prev.plan_meta || null,

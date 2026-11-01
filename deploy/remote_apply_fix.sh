@@ -562,6 +562,11 @@ grep_file "app.css: the phone row is taller" "$WEBROOT/user/css/app.css" '--drum
 grep_file "i18n: the hint says swipe" "$WEBROOT/shared/i18n.js" '上下滑动选择'
 grep_absent "base.css: no leftover spin buttons" "$WEBROOT/shared/base.css" '.time-spin'
 
+echo "== 4ah. a fresh plan starts from a clean slate, not a stale deviation prompt =="
+grep_file "advice_plan.py: the plan keeps its birth time" "$APP_DIR/backend/app/services/advice_plan.py" "_generated_at"
+grep_file "advice_plan.py: only later records count" "$APP_DIR/backend/app/services/advice_plan.py" "_written_after"
+grep_file "advice.js: a generated plan drops the old deviation" "$WEBROOT/user/js/pages/advice.js" "generated ? null : prev.deviation"
+
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"
 else

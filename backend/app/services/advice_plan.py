@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import and_, or_, select
 
@@ -183,16 +183,44 @@ def _planned_days(payload: dict) -> dict[str, dict]:
     return {day["date"]: day for day in (payload.get("plan") or [])}
 
 
+def _generated_at(payload: dict) -> datetime | None:
+    """计划生成的时刻（库里存 UTC，带微秒）。老快照没有这个字段 → 返回 None，不做过滤。"""
+    raw = (payload.get("plan_meta") or {}).get("generated_at") or payload.get("generated_at")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw).strip())
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
+def _written_after(record: SleepRecord, generated_at: datetime) -> bool:
+    """这条记录是不是在计划生成之后写的。没有时间戳（测试里的轻量假记录）就当它是新的。"""
+    stamp = getattr(record, "updated_at", None) or getattr(record, "created_at", None)
+    if stamp is None:
+        return True
+    if getattr(stamp, "tzinfo", None):
+        stamp = stamp.replace(tzinfo=None)
+    return stamp >= generated_at
+
+
 def deviation(payload: dict, records: list[SleepRecord], today: date) -> dict:
     """最近一次记录与计划的偏离程度：≤30 分钟不动，30~90 静默重算，>90 询问。
 
     记录挂在**起床日**上（见 advice_service.wake_day_of）：昨天 23:30 睡、今天 07:30
     起的记录对应今天那张卡片，所以按起床日与计划里的日期配对。
+
+    只比较**计划生成之后**写入的记录：刚点完"重新生成"时，今天凌晨那条记录是照着旧
+    作息睡的、而且早于新计划，拿它去比只会立刻弹一句"你偏离了"，再被顺延一次。
     """
     planned = _planned_days(payload)
     today_iso = today.isoformat()
     # 小睡（<2 小时）不参与偏离判定：否则一条午睡就会抢走「最近一次记录」。
     nights = [record for record in records if not advice_service.is_nap(record)]
+    generated_at = _generated_at(payload)
+    if generated_at is not None:
+        nights = [record for record in nights if _written_after(record, generated_at)]
     latest = None
     for record in sorted(nights, key=advice_service.wake_day_of, reverse=True):
         day_of_record = advice_service.wake_day_of(record)
@@ -211,7 +239,7 @@ def deviation(payload: dict, records: list[SleepRecord], today: date) -> dict:
     for the_date in sorted(recorded):
         day = planned[the_date]
         record = next(
-            item for item in records if advice_service.wake_day_of(item) == the_date
+            item for item in nights if advice_service.wake_day_of(item) == the_date
         )
         try:
             diff = max(
