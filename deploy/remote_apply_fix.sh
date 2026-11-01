@@ -543,6 +543,12 @@ grep_file "app.css: the moved field flashes" "$WEBROOT/user/css/app.css" '.date-
 grep_file "i18n: the future-wake message exists" "$WEBROOT/shared/i18n.js" 'error.wake_date_in_future'
 grep_file "records api: wake dates are capped" "$APP_DIR/backend/app/api/records.py" 'error.wake_date_in_future'
 
+
+echo "== 4af. the calendar arrows can change the month =="
+grep_file "date-picker.js: month arrows stop propagation" "$WEBROOT/user/js/date-picker.js" 'event.stopPropagation();'
+grep_file "date-picker.js: outside clicks use composedPath" "$WEBROOT/user/js/date-picker.js" 'composedPath'
+grep_file "date-picker.js: month view still has nav buttons" "$WEBROOT/user/js/date-picker.js" 'data-dp-move'
+
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"
 else

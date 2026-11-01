@@ -169,6 +169,10 @@ function buildPopover(field, input, { min, max }) {
   box.addEventListener("click", (event) => {
     const nav = event.target.closest?.("[data-dp-move]");
     if (nav) {
+      // 翻月会立刻重画 innerHTML，被点的按钮就从文档里摘掉了；如果不拦住冒泡，
+      // 文档上的「点外面关闭」会把这次点击当成外部点击，弹层直接消失。
+      event.preventDefault();
+      event.stopPropagation();
       viewMonth += Number(nav.dataset.dpMove);
       if (viewMonth < 1) {
         viewMonth = 12;
@@ -250,6 +254,10 @@ export function enhanceDateInputs(root) {
 
 document.addEventListener("click", (event) => {
   if (!active) return;
+  // composedPath 在事件派发时就固定了：翻月重画后 target 可能已脱离文档，
+  // 但路径里仍然有弹层，这时不该算作「点了外面」。
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  if (path.includes(active)) return;
   if (active.contains(event.target)) return;
   if (event.target.closest?.(".date-field")) return;
   closeActive();

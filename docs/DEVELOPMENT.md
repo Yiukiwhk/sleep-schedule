@@ -362,6 +362,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
   不带参数时还会点一天，验证输入框回写和起床日联动）要从 nginx docroot 打开，用探针建的
   `shot-records` / `User@12345` 登录，结果通过 `/healthz?ui=picker:...` 回传；`4aa` 用
   `grep_file` / `grep_absent` 守着这些约定。
+- 翻月按钮（`.dp-nav[data-dp-move]`）一定要 `stopPropagation()`：点一下会立刻重画
+  `box.innerHTML`，被点的按钮随即脱离文档，文档级的“点外面就关”监听会看到 `target`
+  既不在弹层里、也不是 `.date-field`，于是把这次点击当成外部点击把弹层关掉（表现为
+  “左右箭头点了没反应”）。文档监听里再用 `event.composedPath()` 兜一道：路径在事件
+  派发时就固定了，重画后仍然包含弹层。
 ## 图标：内联 SVG 与 data-icon
 
 - 界面里的图标不再用 emoji。emoji 的颜色写死在字形里（深色主题改不动）、不同系统字形不同、
