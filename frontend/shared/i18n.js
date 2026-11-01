@@ -56,7 +56,7 @@ export const DICTS = {
 
     "time.hour": "时",
     "time.minute": "分",
-    "time.rollHint": "上下滑动选择",
+    "time.rollHint": "按住上下拖动选择",
     "time.stepHint": "也可以点数字直接跳",
 
     "login.title": "登录",
@@ -596,7 +596,7 @@ export const DICTS = {
 
     "time.hour": "HH",
     "time.minute": "MM",
-    "time.rollHint": "Swipe to pick",
+    "time.rollHint": "Drag up or down to pick",
     "time.stepHint": "Or tap a number to jump",
 
     "login.title": "Sign in",

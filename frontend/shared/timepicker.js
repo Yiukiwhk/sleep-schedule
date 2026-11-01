@@ -1,5 +1,5 @@
 /* ==========================================================================
-   闹钟式时间选择器：可滚动的圆筒（鼓轮），中间一行是当前选择
+   闹钟式时间选择器：可拖动的圆筒（鼓轮），中间一行是当前选择
    用法：
      const picker = createTimePicker(document.getElementById("host"), {
        value: "23:30",           // "HH:MM" 或 null
@@ -9,18 +9,25 @@
      picker.value;                // 读取当前值
      picker.setValue("07:00");    // 写值
 
-   结构：两列圆筒（时 / 分），每列是一个原生滚动容器 + scroll-snap，
-   滚动时按“离中线多远”给每一项算 rotateX 和透明度，滚出圆柱的观感；
+   结构：两列圆筒（时 / 分），每列是三层重复的轨道，靠按住拖动改位置；
+   松手后按“离中线最近”吸附到整行，并按远近给每一项算 rotateX 和透明度。
    中间是一条固定的选中带，选中的那一行用正文色，越远越淡。
+
+   为什么不监听滚轮：PC 上鼠标滚轮滑过页面时很容易误碰，把时间改掉。
+   现在圆筒自己不是滚动容器（overflow: hidden），滚轮事件照常冒泡给页面，
+   只有按住鼠标/手指上下拖动才会改时间。
    ========================================================================== */
 
 import { t } from "./i18n.js";
 
-/** 与 base.css 里的 --drum-row 保持一致；JS 只拿它算滚动位置和 3D 角度。 */
+/** 与 base.css 里的 --drum-row 保持一致；JS 只拿它算拖动距离和 3D 角度。 */
 const ROW = 36;
 const VISIBLE_ROWS = 5;
 const DEG_PER_ROW = 19;
 const MAX_DEG = 58;
+const REPEAT = 3;
+const DRAG_LIMIT = 3; // 位移超过 3px 才算拖动，否则当作点选
+const SNAP_MS = 160;
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -48,6 +55,10 @@ function clamp(value, low, high) {
   return Math.max(low, Math.min(high, value));
 }
 
+function easeOutCubic(k) {
+  return 1 - Math.pow(1 - k, 3);
+}
+
 /**
  * 造一列圆筒。
  * @param {HTMLElement} host 放圆筒的容器
@@ -57,7 +68,6 @@ function clamp(value, low, high) {
  */
 function buildDrum(host, field, values, onPick) {
   const total = values.length;
-  const REPEAT = 3; // 首尾各复制一份，滚过 23 或 59 才接得上
   const drum = document.createElement("div");
   drum.className = "time-drum";
   drum.dataset.col = field;
@@ -67,6 +77,7 @@ function buildDrum(host, field, values, onPick) {
 
   const track = document.createElement("div");
   track.className = "time-drum-track";
+  // 首尾各复制一份，拖过 23 或 59 才接得上
   for (let copy = 0; copy < REPEAT; copy += 1) {
     values.forEach((value, i) => {
       const item = document.createElement("div");
@@ -91,9 +102,11 @@ function buildDrum(host, field, values, onPick) {
   host.appendChild(wrap);
 
   const items = [...track.children];
-  let raf = 0;
-  let settleTimer = 0;
+  let pos = total; // 浮点行号，落在中间那份上
   let index = 0;
+  let paintRaf = 0;
+  let snapRaf = 0;
+  let drag = null;
 
   /** 行高以真实渲染高度为准：手机上 --drum-row 是 40px，桌面是 36px。 */
   function rowPx() {
@@ -104,128 +117,209 @@ function buildDrum(host, field, values, onPick) {
     return ((raw % total) + total) % total;
   }
 
-  /** 中间那一份里，第 i 个值所在的滚动位置。 */
-  function middleTop(i) {
-    return (total + valueIndex(i)) * rowPx();
-  }
-
-  function rawIndex() {
-    return clamp(Math.round(drum.scrollTop / rowPx()), 0, items.length - 1);
+  /** 位置始终折算回中间那份：内容重复，整份平移看不出来。 */
+  function rebase() {
+    while (pos < total) pos += total;
+    while (pos >= total * 2) pos -= total;
   }
 
   /** 只改视觉：按离中线多远算旋转与浓淡。 */
   function paint() {
     const row = rowPx();
-    const height = drum.clientHeight || row * VISIBLE_ROWS;
-    const center = drum.scrollTop + height / 2;
-    const half = height / 2;
-    items.forEach((item) => {
-      // offsetTop 已经把 track 的上内边距算进去了，不能只用 i * row
-      const y = item.offsetTop + row / 2 - center;
-      const ratio = clamp(y / half, -1.15, 1.15);
+    track.style.transform = `translate3d(0, ${(-pos * row).toFixed(2)}px, 0)`;
+    const half = VISIBLE_ROWS / 2;
+    items.forEach((item, i) => {
+      const dist = i - pos;
+      const near = Math.abs(dist) <= half + 1.6;
+      if (!near) {
+        // 视野外的项不参与计算，省得每帧写 200 多个样式
+        if (item.dataset.far !== "1") {
+          item.dataset.far = "1";
+          item.style.opacity = "0";
+          item.style.transform = "none";
+          item.classList.remove("is-active");
+          item.setAttribute("aria-selected", "false");
+        }
+        return;
+      }
+      if (item.dataset.far === "1") {
+        delete item.dataset.far;
+      }
+      const ratio = clamp(dist / half, -1.15, 1.15);
       const angle = clamp(ratio * 34, -MAX_DEG, MAX_DEG);
-      item.style.transform = `rotateX(${angle.toFixed(2)}deg) translateZ(${(1 - Math.abs(ratio)) * 5}px)`;
-      const rows = Math.abs(y / row);
-      item.style.opacity = String(Math.max(0.34, 1 - rows * 0.23));
-      item.classList.toggle("is-active", rows < 0.5);
-      item.setAttribute("aria-selected", rows < 0.5 ? "true" : "false");
+      const lift = (1 - Math.abs(clamp(ratio, -1, 1))) * 5;
+      item.style.transform = `rotateX(${angle.toFixed(2)}deg) translateZ(${lift.toFixed(2)}px)`;
+      item.style.opacity = String(Math.max(0.34, 1 - Math.abs(dist) * 0.23));
+      const active = Math.abs(dist) < 0.5;
+      item.classList.toggle("is-active", active);
+      item.setAttribute("aria-selected", active ? "true" : "false");
     });
   }
 
-  function settle() {
-    const row = rowPx();
-    const raw = rawIndex();
-    const want = valueIndex(raw);
-    const target = middleTop(want);
-    if (raw < total || raw >= total * 2) {
-      // 滚到复制的首尾份了：内容一样，瞬间换到中间那份，看不出跳
-      drum.scrollTop = target;
+  function schedulePaint() {
+    if (paintRaf) return;
+    paintRaf = window.requestAnimationFrame(() => {
+      paintRaf = 0;
       paint();
-    } else if (Math.abs(drum.scrollTop - target) > 0.5) {
-      drum.scrollTo({ top: target, behavior: "smooth" });
-    }
+    });
+  }
+
+  function commit() {
+    const want = valueIndex(Math.round(pos));
     if (want !== index) {
       index = want;
       onPick(want);
     }
   }
 
-  function schedule() {
-    window.clearTimeout(settleTimer);
-    settleTimer = window.setTimeout(settle, 110);
+  /** 找一个和 from 最近的目标位置（23 → 00 只走一格，不绕 23 格）。 */
+  function nearTarget(from, target) {
+    let delta = ((target - from) % total + total) % total;
+    if (delta > total / 2) delta -= total;
+    return from + delta;
   }
 
-  drum.addEventListener(
-    "scroll",
-    () => {
-      window.cancelAnimationFrame(raf);
-      raf = window.requestAnimationFrame(paint);
-      schedule();
-    },
-    { passive: true }
-  );
+  function stopSnap() {
+    if (snapRaf) {
+      window.cancelAnimationFrame(snapRaf);
+      snapRaf = 0;
+    }
+  }
 
-  // 点某一项：直接滚到它
-  track.addEventListener("click", (event) => {
+  /** 吸附到整行：短动画收尾，停下后再上报。 */
+  function snapTo(target, { animate = true } = {}) {
+    stopSnap();
+    rebase();
+    const to = nearTarget(pos, target);
+    if (!animate) {
+      pos = to;
+      rebase();
+      paint();
+      commit();
+      return;
+    }
+    const from = pos;
+    const start = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - start) / SNAP_MS);
+      pos = from + (to - from) * easeOutCubic(k);
+      paint();
+      if (k < 1) {
+        snapRaf = window.requestAnimationFrame(step);
+      } else {
+        snapRaf = 0;
+        pos = to;
+        rebase();
+        paint();
+        commit();
+      }
+    };
+    snapRaf = window.requestAnimationFrame(step);
+  }
+
+  function onPointerDown(event) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    stopSnap();
     const item = event.target.closest(".time-drum-item");
-    if (!item) return;
-    const want = Number(item.dataset.value);
-    drum.scrollTo({ top: middleTop(want), behavior: "smooth" });
-    index = want;
-    onPick(want);
-  });
+    drag = {
+      id: event.pointerId,
+      lastY: event.clientY,
+      startY: event.clientY,
+      moved: false,
+      item,
+    };
+    drum.setPointerCapture(event.pointerId);
+    drum.classList.add("is-dragging");
+    event.preventDefault();
+    // 按住开始拖时把焦点拿过来，方向键接着能用
+    if (document.activeElement !== drum) drum.focus({ preventScroll: true });
+  }
 
+  function onPointerMove(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    const row = rowPx();
+    if (!drag.moved && Math.abs(event.clientY - drag.startY) > DRAG_LIMIT) {
+      drag.moved = true;
+    }
+    if (!drag.moved) return;
+    // 增量拖动：手指往上 → 位置变大 → 后面的项转上来
+    pos -= (event.clientY - drag.lastY) / row;
+    drag.lastY = event.clientY;
+    rebase();
+    schedulePaint();
+  }
+
+  function onPointerUp(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    const current = drag;
+    drag = null;
+    drum.classList.remove("is-dragging");
+    if (drum.hasPointerCapture(current.id)) drum.releasePointerCapture(current.id);
+    if (current.moved) {
+      snapTo(Math.round(pos));
+      return;
+    }
+    // 没拖动 = 点选：直接吸到点中的那一行
+    if (current.item) {
+      snapTo(Number(current.item.dataset.index), { animate: true });
+      return;
+    }
+    snapTo(Math.round(pos));
+  }
+
+  drum.addEventListener("pointerdown", onPointerDown);
+  drum.addEventListener("pointermove", onPointerMove);
+  drum.addEventListener("pointerup", onPointerUp);
+  drum.addEventListener("pointercancel", onPointerUp);
+
+  // 滚轮不接管：事件冒泡给页面，滚页面不会改时间
   drum.addEventListener("keydown", (event) => {
-    let next = valueIndex(rawIndex());
-    let handled = true;
+    const base = Math.round(pos);
+    let target = null;
     switch (event.key) {
       case "ArrowUp":
-        next -= 1;
+        target = base - 1;
         break;
       case "ArrowDown":
-        next += 1;
+        target = base + 1;
         break;
       case "PageUp":
-        next -= 5;
+        target = base - 5;
         break;
       case "PageDown":
-        next += 5;
+        target = base + 5;
         break;
       case "Home":
-        next = 0;
+        target = total;
         break;
       case "End":
-        next = total - 1;
+        target = total + total - 1;
         break;
       default:
-        handled = false;
-        break;
+        return;
     }
-    if (!handled) return;
     event.preventDefault();
-    next = valueIndex(next);
-    drum.scrollTo({ top: middleTop(next), behavior: "smooth" });
-    index = next;
-    onPick(next);
+    snapTo(target);
   });
 
   const api = {
     el: drum,
     wrap,
-    /** 外部写值：滚到中间那份的对应项（默认不带动画，避免打开表单时抖一下）。 */
+    /** 外部写值：直接落到中间那份的对应项（默认不带动画，避免打开表单时抖一下）。 */
     select(i, { smooth = false } = {}) {
-      index = valueIndex(i);
-      const top = middleTop(index);
+      stopSnap();
+      const target = total + valueIndex(i);
       if (smooth) {
-        drum.scrollTo({ top, behavior: "smooth" });
-      } else {
-        drum.scrollTop = top;
+        snapTo(target);
+        return;
       }
-      window.requestAnimationFrame(paint);
+      pos = target;
+      paint();
+      index = valueIndex(i);
     },
     repaint: paint,
     get index() {
-      return valueIndex(rawIndex());
+      return valueIndex(Math.round(pos));
     },
   };
   return api;
