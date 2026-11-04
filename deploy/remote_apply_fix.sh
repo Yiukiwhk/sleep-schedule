@@ -112,7 +112,9 @@ sudo_run ln -sf "$VHOST" /etc/nginx/sites-enabled/sleep-schedule
 # 模板里 443/证书/域名跳转都带着 #TLS# 注释：证书还没签发时放开这些行，nginx -t 会
 # 因为证书文件不存在而失败。所以装完模板后按“机器上有没有证书”决定要不要放开——
 # 有证书就等价于跑一遍 deploy/enable-tls.sh 的 sed，发布因此永远不会把 HTTPS 降级。
-if [ -f /etc/letsencrypt/live/yiuki.me/fullchain.pem ]; then
+# 注意：/etc/letsencrypt/live 是 0700 root，普通用户 test -f 看不到证书，必须用 sudo_run。
+CERT=/etc/letsencrypt/live/yiuki.me/fullchain.pem
+if sudo_run test -f "$CERT"; then
     if grep -q '#TLS#' "$VHOST"; then
         sudo_run sed -i 's/^\([[:space:]]*\)#TLS# /\1/' "$VHOST"
         echo "   certificate present - TLS lines enabled in the installed vhost"
@@ -133,6 +135,16 @@ if ! sudo_run nginx -t; then
 fi
 sudo_run systemctl reload nginx
 sleep 1
+# 发布把模板装上、又 reload 完之后，证书在却没人监听 443，就说明 HTTPS 被这次发布弄丢了。
+if sudo_run test -f "$CERT"; then
+    https_conns=$(sudo_run ss -ltn 2>/dev/null | grep -c ':443 ' || true)
+    if [ "${https_conns:-0}" -ge 1 ]; then
+        echo "   nginx is listening on https"
+    else
+        echo "!! certificate present but nothing is listening on 443"
+        exit 1
+    fi
+fi
 sudo_run systemctl is-active --quiet sleep-schedule && echo "   sleep-schedule service: active" || echo "   !! sleep-schedule service not active"
 
 echo "== 4. verification (http://127.0.0.1) =="
