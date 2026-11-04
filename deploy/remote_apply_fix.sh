@@ -311,6 +311,16 @@ grep_absent() {  # grep_absent <label> <file> <needle>
         fail=$((fail + 1))
     fi
 }
+grep_fixed() {  # grep_fixed <label> <file> <literal>  (no regex interpretation)
+    local label="$1" file="$2" needle="$3" hits
+    hits=$(grep -c -F -- "$needle" "$file" 2>/dev/null || true)
+    if [ "${hits:-0}" -ge 1 ]; then
+        printf '  ok   %-30s %s\n' "$label" "$needle"
+    else
+        printf '  FAIL %-30s %s missing in %s\n' "$label" "$needle" "$file"
+        fail=$((fail + 1))
+    fi
+}
 echo "== 4f. constraints removed; the refusal preview is deployed =="
 grep_file "frontend: today redraw"     "$WEBROOT/user/js/pages/advice.js"         'renderTodayOnly'
 grep_file "frontend: moved label"      "$WEBROOT/user/js/pages/advice.js"         'meal-moved'
@@ -605,8 +615,8 @@ grep_file "vhost: domain upgrade to https" "$VHOST" 'return 301 https://yiuki.me
 grep_file "vhost: ip entry stays on port 80" "$VHOST" 'listen 80 default_server;'
 
 echo "== 4aj. an IP entry redirects to the certificate-bearing domain =="
-grep_file "vhost: ip hosts are sent to the domain" "$VHOST" 'return 301 https://yiuki.me$request_uri;'
-grep_file "vhost: loopback is excluded from that redirect" "$VHOST" '(?!127\.0\.0\.1$|localhost$)'
+grep_fixed "vhost: ip hosts are sent to the domain" "$VHOST" 'return 301 https://yiuki.me$request_uri;'
+grep_fixed "vhost: loopback is excluded from that redirect" "$VHOST" '127\.0\.0\.1$|localhost$'
 grep_file "vhost: the https listener is enabled" "$VHOST" 'listen 443 ssl http2;'
 ip_code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H 'Host: 39.106.196.92' http://127.0.0.1/user/ || true)
 if [ "$ip_code" = "301" ]; then
