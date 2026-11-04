@@ -217,3 +217,10 @@ SQLite 放在 `/var/lib/sleep-schedule/app.db`），按需求**未启用 HTTPS**
 
 感谢 FastAPI、SQLAlchemy、Uvicorn 等开源项目，以及 [docs/REFERENCES.md](docs/REFERENCES.md) 中四篇文献
 的作者为作息调整提供的实证依据。
+
+
+## 相关仓库
+
+- [yiuki-site](https://github.com/Yiukiwhk/yiuki-site)：`yiuki.me` 的静态首页与博客（纯 HTML/CSS，
+  没有构建步骤）。本仓库的 nginx 配置把 `/` 指向它发布到 `/var/www/sleep-schedule/site/` 的页面，
+  `/blog/` 同理；站点目录不存在时 `/` 退回应用外壳，所以本仓库单独部署也不会 404。

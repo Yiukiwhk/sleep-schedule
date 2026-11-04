@@ -548,3 +548,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
 前端配合一处：`applyState()` 收到 `{ generated: true }` 时把 `deviation` 置空，避免刚生成完还挂着上一份计划的
 偏离状态（POST /api/advice 的响应体本来就不带 deviation）。
 
+## 主域名首页与博客（已迁出到 yiuki-site 仓库）
+
+`/` 的静态首页和 `/blog/` 的博客不再放在这个仓库：源文件和发布脚本都在
+`yiuki-site`（`deploy/publish.ps1` 只往 `/var/www/sleep-schedule/site/` rsync，
+不碰 nginx、不重启后端）。这个仓库只负责 vhost：
+
+- `location = /` 是 `try_files /site/index.html /user/index.html =404`：站点已发布就发首页，
+  站点目录缺失时退回应用外壳，所以本仓库单独部署也不会 404。
+- `location = /blog/` 与 `location ^~ /blog/` 指向 `/site/blog/`，文件不存在就是 404。
+- 发布链路里的 `site` 已从 `apply_fix.ps1` / `remote_apply_fix.sh` / `serve_local.ps1`
+  全部移除，`4ak` 自证也删了；`/`、`/blog/`、`/user/` 的校验改由 `yiuki-site` 的
+  `publish.ps1` 负责。

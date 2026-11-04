@@ -170,7 +170,7 @@ check() {  # check <label> <url> <want-status> [needle]
     printf '  ok   %-30s %s\n' "$label" "$status"
 }
 
-check "root -> /user/"              "http://127.0.0.1/"                          302 ''
+check "root -> landing page or app shell" "http://127.0.0.1/" 200 ''
 check "user index"                  "http://127.0.0.1/user/"                     200 'data-theme'
 check "user index: /shared/base.css" "http://127.0.0.1/user/"                    200 '/shared/base.css'
 check "user index: no ../shared"    "http://127.0.0.1/user/"                     200 'login-form'
