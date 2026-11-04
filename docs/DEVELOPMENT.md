@@ -424,6 +424,23 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
 - 备案下来后补两件事：页脚加备案号并链到 `https://beian.miit.gov.cn/`（阿里云会抽查），
   以及确认 80 端口只剩 301（`curl -I -H 'Host: yiuki.me' http://yiuki.me/`）。
 
+### 已落地（2026-11-04）
+
+- 备案通过：**粤ICP备2026172933号**（粤ICP备2026172933号，链 `https://beian.miit.gov.cn/`），
+  页脚里是静态文本，不挂 `data-i18n`——备案号在任何语言下都必须显示中文原文。
+- 证书：`certbot certonly --webroot -w /var/www/certbot -d yiuki.me -d www.yiuki.me
+  --cert-name yiuki.me`，签发到 `/etc/letsencrypt/live/yiuki.me/`，2027-02-02 到期，
+  `certbot.timer` 自动续期（续期后要 reload nginx，`--deploy-hook "systemctl reload nginx"`
+  可以后补到 `/etc/letsencrypt/renewal/yiuki.me.conf`，不然续期后 nginx 还拿旧证书）。
+- 首次 `certbot` 曾报 `ReadTimeout`，但同一台机器 `curl https://acme-v02.api.letsencrypt.org/directory`
+  是 200——这是到 ACME 的偶发抖动，重试即可，不用改 DNS 或换 CA。
+- **发布不能降级 HTTPS**：`apply_fix.ps1` 会原样装 `deploy/nginx-sleep-schedule.conf`，而模板里
+  443 那几行仍是注释。`deploy/remote_apply_fix.sh` 的 `== 3. vhost ==` 里加了护栏：线上 vhost
+  已经含 `ssl_certificate` 而模板仍含 `#TLS#` 时，保留线上文件、只重挂软链。
+- 验收入口不变：nginx 仍 `listen 80 default_server` 服务 IP 直连，域名在 80 上 301 到
+  `https://yiuki.me`；443 用同一份 server 块 + 证书。`sessions.py` 按 `X-Forwarded-Proto`
+  给 Cookie 加 `Secure`，所以 HTTPS 下登录态才带 Secure。
+
 ## 手机端（≤620px）与 320px 窄屏
 
 - 断点分工：`@media (max-width: 900px)` 只把侧栏收成抽屉（平板也吃这一档）；

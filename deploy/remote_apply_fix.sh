@@ -107,8 +107,16 @@ echo "   sleep-schedule: healthy after restart"
 echo "== 3. vhost =="
 test -f "$STAGE/nginx-sleep-schedule.conf" || { echo "missing vhost in stage"; exit 1; }
 if [ -f "$VHOST" ]; then sudo_run cp -n "$VHOST" "$BACKUP" || true; fi
-sudo_run install -m 0644 -o root -g root "$STAGE/nginx-sleep-schedule.conf" "$VHOST"
-sudo_run ln -sf "$VHOST" /etc/nginx/sites-enabled/sleep-schedule
+# 已经开过 HTTPS 的机器：模板里 443 那几行还带着 #TLS# 注释（证书签发前不能放开，
+# 否则 nginx -t 会因为证书文件不存在而失败）。这种情况下一定要保留线上那份，
+# 否则一次发布就把 HTTPS 悄悄降级回 HTTP。
+if grep -q 'ssl_certificate ' "$VHOST" 2>/dev/null && grep -q '#TLS#' "$STAGE/nginx-sleep-schedule.conf" 2>/dev/null; then
+    echo "   live vhost already serves HTTPS - keeping it, not installing the template"
+    sudo_run ln -sf "$VHOST" /etc/nginx/sites-enabled/sleep-schedule
+else
+    sudo_run install -m 0644 -o root -g root "$STAGE/nginx-sleep-schedule.conf" "$VHOST"
+    sudo_run ln -sf "$VHOST" /etc/nginx/sites-enabled/sleep-schedule
+fi
 sudo_run rm -f /etc/nginx/sites-enabled/default
 if ! sudo_run nginx -t; then
     echo "!! nginx -t failed, restoring backup"
@@ -522,7 +530,8 @@ grep_absent "user shell: emoji nav gone" "$WEBROOT/user/index.html" '📋'
 
 echo "== 4ac. the vhost knows yiuki.me and keeps the ACME webroot =="
 grep_file "vhost: domain in server_name" "$VHOST" 'server_name yiuki.me www.yiuki.me;'
-grep_file "vhost: tls scaffolding present" "$VHOST" '#TLS# listen 443 ssl http2;'
+grep_file "vhost: https listener present" "$VHOST" 'listen 443 ssl http2;'
+grep_file "vhost: cert path is wired" "$VHOST" '/etc/letsencrypt/live/yiuki.me/fullchain.pem'
 grep_file "vhost: acme location" "$VHOST" 'location ^~ /.well-known/acme-challenge/ {'
 grep_file "vhost: acme webroot" "$VHOST" 'root /var/www/certbot;'
 grep_file "sessions: secure cookie only on https" "$APP_DIR/backend/app/services/sessions.py" 'secure=(scheme =='
@@ -570,6 +579,13 @@ echo "== 4ah. a fresh plan starts from a clean slate, not a stale deviation prom
 grep_file "advice_plan.py: the plan keeps its birth time" "$APP_DIR/backend/app/services/advice_plan.py" "_generated_at"
 grep_file "advice_plan.py: only later records count" "$APP_DIR/backend/app/services/advice_plan.py" "_written_after"
 grep_file "advice.js: a generated plan drops the old deviation" "$WEBROOT/user/js/pages/advice.js" "generated ? null : prev.deviation"
+
+echo "== 4ai. the ICP filing number is published, and HTTPS keeps the HTTP entry =="
+grep_file "user shell: ICP number in the footer" "$WEBROOT/user/index.html" '粤ICP备2026172933号'
+grep_file "user shell: ICP links to beian.miit.gov.cn" "$WEBROOT/user/index.html" 'https://beian.miit.gov.cn/'
+grep_file "app.css: the ICP line is styled" "$WEBROOT/user/css/app.css" '.page-foot-icp'
+grep_file "vhost: domain upgrade to https" "$VHOST" 'return 301 https://yiuki.me$request_uri;'
+grep_file "vhost: ip entry stays on port 80" "$VHOST" 'listen 80 default_server;'
 
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"
