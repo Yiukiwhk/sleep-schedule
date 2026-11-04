@@ -441,11 +441,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
 - 首次 `certbot` 曾报 `ReadTimeout`，但同一台机器 `curl https://acme-v02.api.letsencrypt.org/directory`
   是 200——这是到 ACME 的偶发抖动，重试即可，不用改 DNS 或换 CA。
 - **发布不能降级 HTTPS**：`apply_fix.ps1` 会原样装 `deploy/nginx-sleep-schedule.conf`，而模板里
-  443 那几行仍是注释。`deploy/remote_apply_fix.sh` 的 `== 3. vhost ==` 里加了护栏：线上 vhost
-  已经含 `ssl_certificate` 而模板仍含 `#TLS#` 时，保留线上文件、只重挂软链。
+  443 那几行仍是注释。`deploy/remote_apply_fix.sh` 的 `== 3. vhost ==` 现在装完模板后按机器上
+  有没有证书决定是否执行 `sed -i 's/^\([[:space:]]*\)#TLS# /\1/'`（等价于 enable-tls.sh 的
+  那一步），所以发布既能装新模板、也不会把 HTTPS 关掉；`4aj` 里同时验证 443 监听还在。
 - 验收入口不变：nginx 仍 `listen 80 default_server` 服务 IP 直连，域名在 80 上 301 到
   `https://yiuki.me`；443 用同一份 server 块 + 证书。`sessions.py` 按 `X-Forwarded-Proto`
   给 Cookie 加 `Secure`，所以 HTTPS 下登录态才带 Secure。
+- **IP 入口一律 301 到域名**（2026-11-04）：公共 CA 不给裸 IP 签证书，`https://39.106.196.92`
+  必然证书不匹配，所以 80 上的 `if ($host ~* "^(?!127\.0\.0\.1$|localhost$)[0-9]{1,3}(\.[0-9]{1,3}){3}$")`
+  直接把 IP 访问送到 `https://yiuki.me$request_uri`。正则里排除 `127.0.0.1`/`localhost`，
+  否则一键验收自己会被跳到域名；`remote_apply_fix.sh` 的 `4aj` 用带 `Host:` 的 curl 证明
+  “IP → 301 到域名、回环仍 200”。
+- 阿里云的「30 天内解析到内地服务器」核查看的是：A 记录指向备案时的阿里云 IP、站点可访问、
+  页脚公示备案号。三条都满足就不必再操作；换服务器要重做接入备案。
+- 公安联网备案（`beian.mps.gov.cn`，开通后 30 日内）另办，免费；下号后一般也是页脚公示
+  `公网安备 … 号`，和 ICP 号并排即可。
 
 ## 手机端（≤620px）与 320px 窄屏
 

@@ -107,15 +107,20 @@ echo "   sleep-schedule: healthy after restart"
 echo "== 3. vhost =="
 test -f "$STAGE/nginx-sleep-schedule.conf" || { echo "missing vhost in stage"; exit 1; }
 if [ -f "$VHOST" ]; then sudo_run cp -n "$VHOST" "$BACKUP" || true; fi
-# 已经开过 HTTPS 的机器：模板里 443 那几行还带着 #TLS# 注释（证书签发前不能放开，
-# 否则 nginx -t 会因为证书文件不存在而失败）。这种情况下一定要保留线上那份，
-# 否则一次发布就把 HTTPS 悄悄降级回 HTTP。
-if grep -q 'ssl_certificate ' "$VHOST" 2>/dev/null && grep -q '#TLS#' "$STAGE/nginx-sleep-schedule.conf" 2>/dev/null; then
-    echo "   live vhost already serves HTTPS - keeping it, not installing the template"
-    sudo_run ln -sf "$VHOST" /etc/nginx/sites-enabled/sleep-schedule
-else
-    sudo_run install -m 0644 -o root -g root "$STAGE/nginx-sleep-schedule.conf" "$VHOST"
-    sudo_run ln -sf "$VHOST" /etc/nginx/sites-enabled/sleep-schedule
+sudo_run install -m 0644 -o root -g root "$STAGE/nginx-sleep-schedule.conf" "$VHOST"
+sudo_run ln -sf "$VHOST" /etc/nginx/sites-enabled/sleep-schedule
+# 模板里 443/证书/域名跳转都带着 #TLS# 注释：证书还没签发时放开这些行，nginx -t 会
+# 因为证书文件不存在而失败。所以装完模板后按“机器上有没有证书”决定要不要放开——
+# 有证书就等价于跑一遍 deploy/enable-tls.sh 的 sed，发布因此永远不会把 HTTPS 降级。
+if [ -f /etc/letsencrypt/live/yiuki.me/fullchain.pem ]; then
+    if grep -q '#TLS#' "$VHOST"; then
+        sudo_run sed -i 's/^\([[:space:]]*\)#TLS# /\1/' "$VHOST"
+        echo "   certificate present - TLS lines enabled in the installed vhost"
+    else
+        echo "   certificate present - vhost already TLS-enabled"
+    fi
+elif grep -q 'ssl_certificate ' "$VHOST" 2>/dev/null; then
+    echo "!! vhost asks for a certificate but /etc/letsencrypt/live/yiuki.me is missing"
 fi
 sudo_run rm -f /etc/nginx/sites-enabled/default
 if ! sudo_run nginx -t; then
@@ -586,6 +591,28 @@ grep_file "user shell: ICP links to beian.miit.gov.cn" "$WEBROOT/user/index.html
 grep_file "app.css: the ICP line is styled" "$WEBROOT/user/css/app.css" '.page-foot-icp'
 grep_file "vhost: domain upgrade to https" "$VHOST" 'return 301 https://yiuki.me$request_uri;'
 grep_file "vhost: ip entry stays on port 80" "$VHOST" 'listen 80 default_server;'
+
+echo "== 4aj. an IP entry redirects to the certificate-bearing domain =="
+grep_file "vhost: ip hosts are sent to the domain" "$VHOST" 'return 301 https://yiuki.me$request_uri;'
+grep_file "vhost: loopback is excluded from that redirect" "$VHOST" '(?!127\.0\.0\.1$|localhost$)'
+grep_file "vhost: the https listener is enabled" "$VHOST" 'listen 443 ssl http2;'
+ip_code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H 'Host: 39.106.196.92' http://127.0.0.1/user/ || true)
+if [ "$ip_code" = "301" ]; then
+    echo "  ok   ip host over http -> 301"
+else
+    echo "  FAIL ip host over http -> $ip_code (want 301)"; fail=$((fail + 1))
+fi
+ip_loc=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' -H 'Host: 39.106.196.92' http://127.0.0.1/user/ || true)
+case "$ip_loc" in
+    https://yiuki.me/user/*) echo "  ok   ip host lands on the https domain" ;;
+    *) echo "  FAIL ip redirect -> '$ip_loc' (want https://yiuki.me/user/...)"; fail=$((fail + 1)) ;;
+esac
+loop_code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H 'Host: 127.0.0.1' http://127.0.0.1/user/ || true)
+if [ "$loop_code" = "200" ]; then
+    echo "  ok   loopback still served over plain http"
+else
+    echo "  FAIL loopback over http -> $loop_code (want 200)"; fail=$((fail + 1))
+fi
 
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"
