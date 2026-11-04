@@ -49,7 +49,11 @@ class Client:
 
     def __init__(self) -> None:
         self.jar = http.cookiejar.CookieJar()
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
+        # 不走系统代理：开发机开着代理时 urllib 会把 127.0.0.1 也发过去，代理回 404。
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self.jar),
+            urllib.request.ProxyHandler({}),
+        )
 
     def call(self, method: str, path: str, payload: dict | None = None) -> tuple[int, dict, str]:
         data = json.dumps(payload).encode("utf-8") if payload is not None else None

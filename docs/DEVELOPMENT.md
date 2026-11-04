@@ -286,6 +286,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
   用 `[System.IO.File]::ReadAllText/WriteAllText` 指定 UTF-8（本仓库前端为 UTF-8 无 BOM、CRLF），
   否则中文注释会变成乱码；批量改文本优先写成 Python 脚本。
 - `.ps1` 被执行策略拦截：统一用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <脚本>`。
+- **开发机开着系统代理时，Python 的 urllib 会把 `127.0.0.1` 也发给代理**：本机没配 `no_proxy`
+  时 `urllib.request.getproxies()` 会读注册表里的 `ProxyServer`，代理对本地请求回
+  `404` + 空 `content-type`，于是 `check_module_graph.py` / `smoke_http.py` / `e2e_http.py`
+  整片飘红，而同一时刻 `curl.exe`（不读注册表代理）却是 200——排查时先对比这两者。
+  现在这三个脚本都显式 `build_opener(ProxyHandler({}))` 直连，`accept_local.ps1` 另外设了
+  `no_proxy=127.0.0.1,localhost,::1` 兜底。
 - `curl.exe` 接收含双引号的 JSON 会被 PowerShell 拆坏（报 `JSON decode error`）：把 JSON 写进文件
   再用 `--data-binary "@文件"`。
 - headless Edge 必须 `Start-Process -FilePath msedge.exe -ArgumentList <参数> -Wait`，直接

@@ -41,10 +41,15 @@ WANTED_TYPE = {
 }
 
 
+# 开发机开着系统代理时，urllib 会读注册表里的 ProxyServer，连 127.0.0.1 都发给代理，
+# 代理回 404，本地验收就整片飘红。验收要的是直连，所以显式给一个不走代理的 opener。
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def fetch(url: str, timeout: float = 20.0):
     request = urllib.request.Request(url, headers={"User-Agent": "module-graph-check"})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _OPENER.open(request, timeout=timeout) as response:
             body = response.read()
             return response.status, response.headers.get("Content-Type", ""), body
     except urllib.error.HTTPError as error:

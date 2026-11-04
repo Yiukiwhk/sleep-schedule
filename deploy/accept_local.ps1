@@ -53,6 +53,12 @@ $probe = Join-Path $accept "zz-smoke-advice.html"
 $base = "http://127.0.0.1:$NginxPort"
 New-Item -ItemType Directory -Path $accept -Force | Out-Null
 
+# 本地验收一律直连：开发机开着系统代理时，python 的 urllib 会读注册表里的 ProxyServer，
+# 把 127.0.0.1 的请求也发给代理（代理回 404），验收就会整片飘红。no_proxy 让所有
+# 认这个变量的客户端绕开代理，脚本里的 opener 另外也显式关掉了代理。
+$env:no_proxy = "127.0.0.1,localhost,::1"
+$env:NO_PROXY = $env:no_proxy
+
 $script:failed = 0
 function Check([string]$Name, [bool]$Ok, [string]$Detail = "") {
     if ($Ok) { Write-Host ("  [PASS] " + $Name) }

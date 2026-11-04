@@ -41,10 +41,15 @@ CHECKS: list[tuple[str, str, str]] = [
 ]
 
 
+# 开发机开着系统代理时，urllib 会读注册表里的 ProxyServer，连 127.0.0.1 都发给代理，
+# 代理回 404，冒烟就会整片飘红。冒烟要的是直连，所以显式给一个不走代理的 opener。
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def fetch(path: str) -> tuple[int, str, str]:
     request = urllib.request.Request(BASE + path, headers={"Accept": "*/*"})
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with _OPENER.open(request, timeout=10) as response:
             return response.status, response.headers.get("content-type", ""), response.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as error:
         return error.code, error.headers.get("content-type", ""), error.read().decode("utf-8", "replace")
