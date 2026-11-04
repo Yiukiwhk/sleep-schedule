@@ -608,7 +608,7 @@ grep_file "advice_plan.py: only later records count" "$APP_DIR/backend/app/servi
 grep_file "advice.js: a generated plan drops the old deviation" "$WEBROOT/user/js/pages/advice.js" "generated ? null : prev.deviation"
 
 echo "== 4ai. the ICP filing number is published, and HTTPS keeps the HTTP entry =="
-grep_file "user shell: ICP number in the footer" "$WEBROOT/user/index.html" '粤ICP备2026172933号'
+grep_file "user shell: ICP number in the footer" "$WEBROOT/user/index.html" '粤ICP备2026172933号-1'
 grep_file "user shell: ICP links to beian.miit.gov.cn" "$WEBROOT/user/index.html" 'https://beian.miit.gov.cn/'
 grep_file "app.css: the ICP line is styled" "$WEBROOT/user/css/app.css" '.page-foot-icp'
 grep_file "vhost: domain upgrade to https" "$VHOST" 'return 301 https://yiuki.me$request_uri;'
