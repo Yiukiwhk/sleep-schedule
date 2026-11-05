@@ -33,6 +33,7 @@ const view = {
   selected: new Set(),
   meta: null,
   cooldownUntil: 0,
+  cooldownTimer: 0,
   overview: [],
 };
 
@@ -653,14 +654,18 @@ function renderMeta(root) {
   if (!tip) return;
   const left = cooldownRemaining();
   tip.classList.toggle("hidden", left <= 0);
-  if (left > 0) tip.textContent = t("records.cooldown", { seconds: left });
+  tip.textContent = left > 0 ? t("records.cooldown", { seconds: left }) : "";
 }
 
 function tick(root) {
-  if (cooldownRemaining() > 0) {
-    renderMeta(root);
-    setTimeout(() => tick(root), 1000);
-  }
+  // 剩 0 秒时也要再渲染一次：只在 left > 0 时渲染的话，提示会停在“1 秒后重试”上不消失。
+  renderMeta(root);
+  if (cooldownRemaining() <= 0) return;
+  if (view.cooldownTimer) clearTimeout(view.cooldownTimer);
+  view.cooldownTimer = setTimeout(() => {
+    view.cooldownTimer = 0;
+    tick(root);
+  }, 1000);
 }
 
 /* ------------------------------ 数据 ------------------------------ */

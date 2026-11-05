@@ -560,3 +560,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
 - 发布链路里的 `site` 已从 `apply_fix.ps1` / `remote_apply_fix.sh` / `serve_local.ps1`
   全部移除，`4ak` 自证也删了；`/`、`/blog/`、`/user/` 的校验改由 `yiuki-site` 的
   `publish.ps1` 负责。
+
+## 写入冷却：提示要自己收尾（2026-11）
+
+后端有 10 秒写入冷却，记录页顶部会显示倒计时提示。倒计时靠 `tick()` 每秒重画，
+**归零的那一帧也必须重画**：如果只在 `cooldownRemaining() > 0` 时渲染，最后一帧永远
+执行不到，提示会冻在「写入过于频繁，请在 1 秒后重试」上，再也不消失（线上真出现过，
+用户报的就是这个）。
+
+三个要点：
+
+- `tick()` 先 `renderMeta(root)`，再判断剩余秒数；链式 `setTimeout` 的句柄存在
+  `view.cooldownTimer` 里，重新开始倒计时时先 `clearTimeout`，避免两条链同时跑；
+- `renderMeta()` 在把提示藏起来的同时把 `textContent` 也清空，页面上不留看不见的旧话；
+- 自证 `4ak` 里钉住这两行，别让回调改成"只在有剩余时渲染"。

@@ -636,6 +636,11 @@ else
     echo "  FAIL loopback over http -> $loop_code (want 200)"; fail=$((fail + 1))
 fi
 
+echo "== 4ak. the cooldown tip disappears when the countdown ends =="
+# 只依赖"剩余秒数 > 0 才渲染"时，倒计时归零的最后一帧永远画不出来，提示会停在"1 秒后重试"。
+grep_file "records.js: the tick chain owns a timer handle" "$WEBROOT/user/js/pages/records.js" 'view.cooldownTimer = setTimeout'
+grep_file "records.js: the tip text clears when the countdown ends" "$WEBROOT/user/js/pages/records.js" 'tip.textContent = left > 0'
+
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"
 else
