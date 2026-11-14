@@ -649,11 +649,11 @@ grep_file "records.js: the tip text clears when the countdown ends" "$WEBROOT/us
 
 echo "== 4al. the meal anchor can be switched off =="
 # 三餐锚点：开启时午餐/晚餐仍夹在现实窗口里，关闭时不夹。后端开关、迁移、前端开关与文案都要在。
-grep_file "advice.py: the reality windows are behind a switch" "$APP_DIR/backend/services/advice.py" 'if anchor:'
-grep_file "advice.py: the generator passes the user setting" "$APP_DIR/backend/services/advice.py" 'anchor=bool(user.meal_anchor)'
-grep_file "advice.py: reading a plan uses the current setting" "$APP_DIR/backend/api/advice.py" 'anchor=bool(user.meal_anchor)'
-grep_file "db.py: the column is migrated in place" "$APP_DIR/backend/db.py" '_migrate_users_meal_anchor'
-grep_file "models.py: the column exists on the user" "$APP_DIR/backend/models.py" 'meal_anchor: Mapped[bool]'
+grep_file "advice.py: the reality windows are behind a switch" "$APP_DIR/backend/app/services/advice.py" 'if anchor:'
+grep_file "advice.py: the generator passes the user setting" "$APP_DIR/backend/app/services/advice.py" 'anchor=bool(user.meal_anchor)'
+grep_file "advice.py: reading a plan uses the current setting" "$APP_DIR/backend/app/api/advice.py" 'anchor=bool(user.meal_anchor)'
+grep_file "db.py: the column is migrated in place" "$APP_DIR/backend/app/db.py" '_migrate_users_meal_anchor'
+grep_file "models.py: the column exists on the user" "$APP_DIR/backend/app/models.py" 'meal_anchor: Mapped[bool]'
 grep_file "advice.js: the toggle renders below the today card" "$WEBROOT/user/js/pages/advice.js" 'data-anchor'
 grep_file "advice.js: toggling persists the setting" "$WEBROOT/user/js/pages/advice.js" 'meal_anchor: on'
 grep_file "i18n.js: both hint texts exist" "$WEBROOT/shared/i18n.js" 'advice.anchor.title'
