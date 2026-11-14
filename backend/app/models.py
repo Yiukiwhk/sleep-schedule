@@ -57,6 +57,9 @@ class User(Base, TimestampMixin):
     meal_breakfast: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     meal_lunch: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     meal_dinner: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 三餐锚点：开启时午/晚餐不超过社会常规时段（午餐 15:00、晚餐 22:00），
+    # 关闭后完全跟随作息推算，不再压回窗口。
+    meal_anchor: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # 登录安全
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

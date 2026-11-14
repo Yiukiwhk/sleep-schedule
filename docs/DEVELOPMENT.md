@@ -574,3 +574,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\accept_local.ps
   `view.cooldownTimer` 里，重新开始倒计时时先 `clearTimeout`，避免两条链同时跑；
 - `renderMeta()` 在把提示藏起来的同时把 `textContent` 也清空，页面上不留看不见的旧话；
 - 自证 `4ak` 里钉住这两行，别让回调改成"只在有剩余时渲染"。
+
+## 三餐锚点：最晚时间可以关掉（2026-11）
+
+建议里给午餐、晚餐各留了一个「现实窗口」（午餐 11:00–15:00、晚餐 17:00–22:00），
+清晨型用户按窗口吃没问题，晚睡型用户被夹到 15:00/22:00 就会觉得"这不是我刚起床吗"。
+所以今天卡片底部加了一个开关，默认开启：
+
+- 开启：`_meal_times()` 里第二步（夹进现实窗口）照旧执行；
+- 关闭：跳过第二步，三餐只按「整体提前一小时」和「先后顺序」推算，不再有最晚时间。
+
+实现上有四处必须同时成立，缺一处就会出现"前端关了、后端还夹"：
+
+- `services/advice.py` 的 `_meal_times(..., anchor: bool = True)` 把两步夹取整体包进 `if anchor:`；
+  生成时传 `anchor=bool(user.meal_anchor)`；
+- `apply_meal_overlay(..., anchor=...)` 也要透传——读取当前计划时会按**现在**的设置重算今天/明天，
+  快照本身不改写，所以用户切开关后刷新就能看到变化，不用重新生成；
+- `users.meal_anchor` 列由 `db.py` 的 `_migrate_users_meal_anchor()` 就地补列（默认 1），
+  `schema_check.py` 输出 `users_has_meal_anchor`，`4d` 断言它存在，`4al` 再钉住前后端关键行；
+- 前端 `advice.js` 的 `toggleAnchor()` 采用乐观更新：先按新状态重绘，再 `PUT /api/settings`，
+  然后重新 `GET /api/advice/plan` 覆盖本地状态；失败要回滚开关位置，否则用户看到的是假状态。
+
+文案（`advice.anchor.on/off`）要把两个时间写全，别只说"有/没有限制"——用户判断不了"限制是多少"。

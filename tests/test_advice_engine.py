@@ -350,6 +350,35 @@ def test_meals_snap_to_reality_windows_for_normal_schedules(client: TestClient) 
     assert (dinner - lunch) % advice_service.DAY >= advice_service.MIN_MEAL_GAP
 
 
+def test_meal_anchor_off_skips_reality_windows(client: TestClient) -> None:
+    """三餐锚点关闭后不再把午/晚餐压回常规时段，改回只跟作息推算。
+
+    晚睡晚起（03:00 睡、11:00 起）时午餐本来会被压到 15:00；关掉锚点应当停在中点
+    算出的位置（> 15:00）。开关是账号级偏好，读取当前计划时就按新设置重算今天。
+    """
+    username = "anchorday"
+    _make_user(username, rows=_records_pattern("03:00", "11:00"), target=("03:00", "11:00"))
+    _login(client, username)
+
+    client.post("/api/advice", json={"mode": "slow", "days": 1})
+    state = client.get("/api/advice/plan").json()
+    anchored_lunch = parse_hhmm(state["today"]["meals"]["lunch"]["best_time"])
+    assert anchored_lunch == advice_service.LUNCH_NORMAL_WINDOW[1], anchored_lunch
+
+    # 关掉锚点：同一天重算，午餐越过 15:00 的窗口
+    body = client.put("/api/settings", json={"meal_anchor": False}).json()
+    assert body["meal_anchor"] is False
+    state = client.get("/api/advice/plan").json()
+    free_lunch = parse_hhmm(state["today"]["meals"]["lunch"]["best_time"])
+    assert free_lunch > advice_service.LUNCH_NORMAL_WINDOW[1], free_lunch
+
+    # 再打开：回到窗口内（证明读取时确实按当前设置重算，而不是只影响新计划）
+    client.put("/api/settings", json={"meal_anchor": True})
+    state = client.get("/api/advice/plan").json()
+    back = parse_hhmm(state["today"]["meals"]["lunch"]["best_time"])
+    assert back == advice_service.LUNCH_NORMAL_WINDOW[1], back
+
+
 def test_checkin_eaten_true_writes_back(client: TestClient) -> None:
     username = "mealeaten"
     _make_user(username, rows=_records_pattern("23:30", "07:30"), target=("23:00", "07:00"))

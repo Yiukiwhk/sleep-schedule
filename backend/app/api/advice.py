@@ -90,7 +90,9 @@ def _state(db, user: User, *, today: date, with_auto: bool = True) -> dict:
 
     # 三餐记录是「今天的实时事实」：读取时按它重算今天与明天两行（不改写快照）
     history = advice_service.meal_history(db, user.id, today=today)
-    payload = advice_service.apply_meal_overlay(payload, history, today=today)
+    payload = advice_service.apply_meal_overlay(
+        payload, history, today=today, anchor=bool(user.meal_anchor)
+    )
     meal_plan = _meal_plan_state(db, user, today)
     day = advice_service.day_for(payload.get("plan") or [], today)
     return {

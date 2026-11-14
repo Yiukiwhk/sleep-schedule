@@ -8,7 +8,7 @@
    - 所有后端字符串都是 i18n key，统一走 t(key, params)
    ========================================================================== */
 
-import { adviceApi, ApiError } from "/shared/api.js";
+import { adviceApi, ApiError, settingsApi } from "/shared/api.js";
 import { t } from "/shared/i18n.js";
 import { renderTimeline } from "/shared/timeline.js";
 import { iconSvg } from "/shared/icons.js";
@@ -42,6 +42,9 @@ const view = {
   formOpen: false,
   deviating: false,
   langBound: false,
+  // 三餐锚点：开启时午/晚餐压回常规时段，关闭后只跟随作息推算
+  anchor: true,
+  anchorBusy: false,
 };
 
 /* ------------------------------- 小工具 ------------------------------- */
@@ -237,6 +240,16 @@ function todayCardHtml(data) {
       <button class="btn btn-sm" id="advice-regenerate-bottom" data-regenerate>${escapeHtml(
         t("advice.regenerateBottom")
       )}</button>
+    </div>
+
+    <div class="today-anchor" data-anchor-row>
+      <label class="switch">
+        <input type="checkbox" data-anchor ${view.anchor ? "checked" : ""} />
+        <span>${escapeHtml(t("advice.anchor.title"))}</span>
+      </label>
+      <span class="tiny muted" data-anchor-hint>${escapeHtml(
+        t(view.anchor ? "advice.anchor.on" : "advice.anchor.off")
+      )}</span>
     </div>
   </section>`;
 }
@@ -1039,6 +1052,16 @@ function bindPlanActions(root) {
     btn.addEventListener("click", () => ackNotice(root, btn));
   });
 
+  // 三餐锚点：局部重绘会换掉 input，委托挂在 root 上
+  if (root.dataset.anchorBound !== "1") {
+    root.dataset.anchorBound = "1";
+    root.addEventListener("change", (event) => {
+      const input = event.target.closest("[data-anchor]");
+      if (!input || !root.contains(input)) return;
+      toggleAnchor(root, input.checked);
+    });
+  }
+
   bindMealCheckin(root);
 }
 
@@ -1416,6 +1439,30 @@ async function ackNotice(root, btn) {
   }
 }
 
+/** 三餐锚点开关：先乐观更新界面，再落库，并按新设置重算今天与明天。 */
+async function toggleAnchor(root, on) {
+  if (view.anchorBusy || view.anchor === on) return;
+  const previous = view.anchor;
+  view.anchor = on;
+  view.anchorBusy = true;
+  renderPlanView(root);
+  try {
+    await settingsApi.update({ meal_anchor: on });
+    // 今天的午餐/晚餐是读取时按当前设置重算的：重新拉一次就位
+    const state = await adviceApi.plan();
+    if (state?.has_plan) applyState(state);
+    renderPlanView(root);
+    toastOk(t(on ? "advice.anchor.savedOn" : "advice.anchor.savedOff"));
+  } catch (err) {
+    view.anchor = previous;
+    renderPlanView(root);
+    if (err instanceof ApiError && err.status === 401) throw err;
+    toastErr(err instanceof Error ? err.message : t("error.server"));
+  } finally {
+    view.anchorBusy = false;
+  }
+}
+
 /** 偏离弹窗：三个策略按钮各自结束弹窗；右上角 × 与底部「关闭」只关闭、不发请求 */
 async function askDeviation(root) {
   if (view.deviating) return;
@@ -1573,7 +1620,7 @@ export async function renderAdvicePage(root, ctx = {}) {
   view.state = null;
   view.formOpen = false;
 
-  const [options, state] = await Promise.all([
+  const [options, state, settings] = await Promise.all([
     adviceApi.options().catch((err) => {
       if (err instanceof ApiError && err.status === 401) throw err;
       return null;
@@ -1583,8 +1630,15 @@ export async function renderAdvicePage(root, ctx = {}) {
       toastErr(err instanceof Error ? err.message : t("advice.loadError"));
       return null;
     }),
+    settingsApi.get().catch((err) => {
+      if (err instanceof ApiError && err.status === 401) throw err;
+      return null;
+    }),
   ]);
   if (ctx.isStale?.()) return;
+
+  // 三餐锚点是账号级偏好：首帧就要用它决定提示文案
+  view.anchor = settings?.meal_anchor !== false;
 
   view.options = options || { has_custom_target: true, meal_flags: {} };
   // has_plan=false 时给的是空壳（meal_plan/engine），直接落到生成表单

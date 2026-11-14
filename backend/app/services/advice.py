@@ -513,6 +513,7 @@ def _meal_times(
     *,
     prev_meals: dict | None = None,
     today_meals: dict | None = None,
+    anchor: bool = True,
 ) -> dict[str, dict]:
     """三餐推荐时间：早餐锚起床、晚餐锚入睡，午餐取两者的中点，再按现实作息校准。
 
@@ -529,6 +530,9 @@ def _meal_times(
     ① 先按上面的锚点算基准，再整体提前 1 小时（MEAL_ADVANCE_MIN）；
     ② 现实作息窗口：正常作息时把午餐、晚餐就近压回社会常规时段；
     ③ 保序：晚餐早于入睡、午餐晚于早餐、两餐之间留够间隔。
+
+    ② 由「三餐锚点」开关控制（`anchor`）：关掉时彻底跳过，午餐/晚餐完全跟着作息走，
+    晚睡的人晚餐可以落在 22:00 之后。① 与 ③ 无论开关如何都会执行。
 
     每一餐都带 `shift_reason`（哪一顿没吃导致它提前）：前端据此写「为什么提前」，
     不再自己猜来源。
@@ -580,10 +584,12 @@ def _meal_times(
     # ② 现实窗口：作息正常就"就近靠拢"到常规用餐时段，越界则整步跳过。
     #    晚餐的"正常入睡"= 次日 06:00 之前，或当天傍晚之后（都算夜里睡）；
     #    06:00~17:00 之间入睡属于白天补觉，不套用社会时钟。
-    if wake <= NORMAL_WAKE_UNTIL:
-        lunch_best = max(LUNCH_NORMAL_WINDOW[0], min(lunch_best, LUNCH_NORMAL_WINDOW[1]))
-    if sleep_clock <= NORMAL_SLEEP_UNTIL or sleep_clock >= DINNER_NORMAL_WINDOW[0]:
-        dinner_best = max(DINNER_NORMAL_WINDOW[0], min(dinner_best, DINNER_NORMAL_WINDOW[1]))
+    #    三餐锚点关闭时这一步整体跳过：午餐/晚餐只受③的保序约束。
+    if anchor:
+        if wake <= NORMAL_WAKE_UNTIL:
+            lunch_best = max(LUNCH_NORMAL_WINDOW[0], min(lunch_best, LUNCH_NORMAL_WINDOW[1]))
+        if sleep_clock <= NORMAL_SLEEP_UNTIL or sleep_clock >= DINNER_NORMAL_WINDOW[0]:
+            dinner_best = max(DINNER_NORMAL_WINDOW[0], min(dinner_best, DINNER_NORMAL_WINDOW[1]))
 
     # ③ 保序：窗口可能把两餐推到睡眠之后或互相倒挂，这里统一收尾。
     dinner_best = min(dinner_best, sleep - DINNER_BEFORE_SLEEP[0])
@@ -910,6 +916,7 @@ def build_advice(
             # 只看昨天与当天：更远的日子没有记录，get() 自然返回 None（= 不提前）
             prev_meals=meal_states.get((day_date - timedelta(days=1)).isoformat()),
             today_meals=meal_states.get(day_date.isoformat()),
+            anchor=bool(user.meal_anchor),
         )
         plan.append(
             {
@@ -1019,12 +1026,17 @@ def build_advice(
     }
 
 
-def apply_meal_overlay(payload: dict | None, history: dict, *, today: date) -> dict | None:
+def apply_meal_overlay(
+    payload: dict | None, history: dict, *, today: date, anchor: bool = True
+) -> dict | None:
     """把「今天与明天」的三餐按**当前**记录重算一遍（不重写快照）。
 
     快照是生成那一刻算好的：一次打卡 / 一次勾选不该重写它（否则 plan_meta 里的
     「已重算 N 次」会莫名上涨、历史计划也被悄悄改写）。所以读取时只覆盖今天与明天
     这两行 —— 规则只看昨天与当天，再往后没有数据可用，算出来也不会变。
+
+    `anchor` 来自用户当前的「三餐锚点」开关：关闭后重算的今天/明天不再压回
+    午餐 15:00、晚餐 22:00 的常规窗口，用户一拨开关就能立刻看到差别。
     """
     states = history.get("by_date") or {}
     if not payload:
@@ -1046,6 +1058,7 @@ def apply_meal_overlay(payload: dict | None, history: dict, *, today: date) -> d
             enabled,
             prev_meals=states.get((day_date - timedelta(days=1)).isoformat()),
             today_meals=states.get(day_date.isoformat()),
+            anchor=anchor,
         )
         day["meals"] = fresh
         day["timeline"] = _timeline(sleep_minutes, wake_minutes, fresh)

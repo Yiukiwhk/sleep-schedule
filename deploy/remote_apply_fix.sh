@@ -250,6 +250,10 @@ case "$schema" in
     *) echo "  FAIL users.advice_notice_ack missing"; fail=$((fail + 1)) ;;
 esac
 case "$schema" in
+    *'"users_has_meal_anchor": true'*) echo "  ok   users.meal_anchor present" ;;
+    *) echo "  FAIL users.meal_anchor missing"; fail=$((fail + 1)) ;;
+esac
+case "$schema" in
     *advice_plans*) echo "  ok   advice_plans table present" ;;
     *) echo "  FAIL advice_plans table missing"; fail=$((fail + 1)) ;;
 esac
@@ -642,6 +646,17 @@ echo "== 4ak. the cooldown tip disappears when the countdown ends =="
 # 只依赖"剩余秒数 > 0 才渲染"时，倒计时归零的最后一帧永远画不出来，提示会停在"1 秒后重试"。
 grep_file "records.js: the tick chain owns a timer handle" "$WEBROOT/user/js/pages/records.js" 'view.cooldownTimer = setTimeout'
 grep_file "records.js: the tip text clears when the countdown ends" "$WEBROOT/user/js/pages/records.js" 'tip.textContent = left > 0'
+
+echo "== 4al. the meal anchor can be switched off =="
+# 三餐锚点：开启时午餐/晚餐仍夹在现实窗口里，关闭时不夹。后端开关、迁移、前端开关与文案都要在。
+grep_file "advice.py: the reality windows are behind a switch" "$APP_DIR/backend/services/advice.py" 'if anchor:'
+grep_file "advice.py: the generator passes the user setting" "$APP_DIR/backend/services/advice.py" 'anchor=bool(user.meal_anchor)'
+grep_file "advice.py: reading a plan uses the current setting" "$APP_DIR/backend/api/advice.py" 'anchor=bool(user.meal_anchor)'
+grep_file "db.py: the column is migrated in place" "$APP_DIR/backend/db.py" '_migrate_users_meal_anchor'
+grep_file "models.py: the column exists on the user" "$APP_DIR/backend/models.py" 'meal_anchor: Mapped[bool]'
+grep_file "advice.js: the toggle renders below the today card" "$WEBROOT/user/js/pages/advice.js" 'data-anchor'
+grep_file "advice.js: toggling persists the setting" "$WEBROOT/user/js/pages/advice.js" 'meal_anchor: on'
+grep_file "i18n.js: both hint texts exist" "$WEBROOT/shared/i18n.js" 'advice.anchor.title'
 
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"

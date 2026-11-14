@@ -35,6 +35,7 @@ finally:
 
 print(json.dumps({
     "users_has_notice_ack": "advice_notice_ack" in user_columns,
+    "users_has_meal_anchor": "meal_anchor" in user_columns,
     "meal_checks_has_refused": "refused" in meal_columns,
     "sleep_records_has_wake_date": "wake_date" in record_columns,
     "sleep_records_without_wake_date": empty_wake_dates,

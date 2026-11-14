@@ -130,6 +130,7 @@ def init_db() -> None:
     models.Base.metadata.create_all(bind=engine)
     _migrate_deletion_requests()
     _migrate_users_advice_notice()
+    _migrate_users_meal_anchor()
     _migrate_meal_checks_refused()
     _migrate_sleep_records_wake_date()
     _migrate_sleep_records_meal_date()
@@ -225,6 +226,20 @@ def _migrate_users_advice_notice() -> None:
         if any(row[1] == "advice_notice_ack" for row in rows):
             return
         conn.execute(text("ALTER TABLE users ADD COLUMN advice_notice_ack VARCHAR(64)"))
+
+
+def _migrate_users_meal_anchor() -> None:
+    """给 users 表补 meal_anchor 列（三餐锚点开关，默认开启）。
+
+    老用户没有这个字段时按"开启"处理，与现有三餐最晚时间的表现保持一致。
+    """
+    with engine.begin() as conn:
+        rows = conn.execute(text("PRAGMA table_info(users)")).fetchall()
+        if not rows:
+            return
+        if any(row[1] == "meal_anchor" for row in rows):
+            return
+        conn.execute(text("ALTER TABLE users ADD COLUMN meal_anchor BOOLEAN NOT NULL DEFAULT 1"))
 
 
 def _migrate_deletion_requests() -> None:

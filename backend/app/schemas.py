@@ -113,6 +113,7 @@ class UserPublic(ORMModel):
     meal_breakfast: bool
     meal_lunch: bool
     meal_dinner: bool
+    meal_anchor: bool = True
     created_at: datetime
     last_login_at: datetime | None = None
 
@@ -333,6 +334,7 @@ class PreferenceUpdate(BaseModel):
     meal_breakfast: bool | None = None
     meal_lunch: bool | None = None
     meal_dinner: bool | None = None
+    meal_anchor: bool | None = None
 
 
 class TargetScheduleUpdate(BaseModel):
