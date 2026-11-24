@@ -46,5 +46,8 @@ def test_desktop_smoke_self_check() -> None:
         assert report["create"]["status"] == 201
         # 桌面版没有后台页面。
         assert report["admin_page"]["status"] == 404
+        # 桌面包（desktop.sync）必须能被后端懒导入，否则同步会 503。
+        assert report["sync_state"]["status"] == 200
+        assert report["sync_state"]["bound"] is False
     finally:
         shutil.rmtree(report.get("data_dir", ""), ignore_errors=True)

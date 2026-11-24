@@ -80,6 +80,12 @@ def ensure_backend_on_path() -> None:
     root = backend_import_root()
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
+    if not getattr(sys, "frozen", False):
+        # backend/app imports the desktop package lazily (sync/import/update);
+        # running this file as a script does not put the repo root on sys.path.
+        repo = here.parent
+        if str(repo) not in sys.path:
+            sys.path.insert(1, str(repo))
 
 
 def _prepare_environment(paths: dict[str, Path], *, port: int, token: str) -> None:
@@ -165,6 +171,10 @@ def run_smoke(report_path: str | None = None) -> int:
         report["create"] = {"status": status, "id": created.get("id")}
         status, admin = runtime.request_json(f"{base}/admin/", token=token)
         report["admin_page"] = {"status": status}
+        # The backend imports desktop.sync lazily; a 503 here means the desktop
+        # package did not make it into the bundle.
+        status, sync_state = runtime.request_json(f"{base}/api/desktop/sync/state", token=token)
+        report["sync_state"] = {"status": status, "bound": sync_state.get("bound")}
         report["ok"] = (
             report["runtime"].get("desktop") is True
             and report["me"].get("status") == 200
@@ -172,6 +182,8 @@ def run_smoke(report_path: str | None = None) -> int:
             and report["no_token"].get("status") == 403
             and report["create"].get("status") == 201
             and report["admin_page"].get("status") == 404
+            and report["sync_state"].get("status") == 200
+            and report["sync_state"].get("bound") is False
         )
     except Exception as exc:  # noqa: BLE001 - the self-check reports, never raises
         report["error"] = f"{type(exc).__name__}: {exc}"

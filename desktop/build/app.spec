@@ -12,6 +12,15 @@ ROOT = Path(SPECPATH).resolve().parent.parent  # desktop/build -> repo root
 
 hidden = [
     "app.main",
+    # The backend imports these lazily (only the desktop app has them), so the
+    # analysis cannot see them; without them sync/import/update return 503.
+    "desktop.sync",
+    "desktop.updater",
+    "desktop.security",
+    "desktop.importers",
+    "desktop.importers.base",
+    "desktop.importers.files",
+    "desktop.importers.ocr",
     # uvicorn loads its loop/protocol/lifespan implementations dynamically.
     "uvicorn.logging",
     "uvicorn.loops",
