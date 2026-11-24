@@ -139,6 +139,13 @@ class SleepRecord(Base, TimestampMixin):
     # （见 services/advice.py 的 meal_day_of），新记录一律写入。
     meal_date: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)  # YYYY-MM-DD
     note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 云同步列（见 docs/DESKTOP.md 第 7 节）：client_row_id 是客户端生成的稳定行标识，
+    # sync_updated_at 存客户端时钟的 UTC ISO8601 毫秒串（LWW 比较用），sync_rev 是
+    # 本行最后一次变动在 sync_log 里的序号（拉取游标），deleted_at 非空表示墓碑。
+    client_row_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    sync_updated_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sync_rev: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="records")
 
@@ -169,6 +176,11 @@ class MealCheck(Base, TimestampMixin):
     meal: Mapped[str] = mapped_column(String(16), nullable=False)   # breakfast | lunch | dinner
     eaten: Mapped[bool] = mapped_column(Boolean, nullable=False)
     refused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # 不想吃
+    # 云同步列，含义同 SleepRecord。
+    client_row_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    sync_updated_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sync_rev: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="meal_checks")
 
@@ -291,3 +303,48 @@ class SystemLog(Base):
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     path: Mapped[str | None] = mapped_column(String(160), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False, index=True)
+
+
+class SyncDevice(Base):
+    """桌面端设备令牌（只存哈希；明文只在创建时返回一次）。"""
+
+    __tablename__ = "sync_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SyncLog(Base):
+    """同步变更日志：rev 单调递增，push 每落一行就追加一条，pull 按 rev 增量拉取。"""
+
+    __tablename__ = "sync_log"
+
+    rev: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    table_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    client_row_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    op: Mapped[str] = mapped_column(String(8), nullable=False, default="upsert")
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class SyncSettings(Base):
+    """user_settings 这张同步表在服务端的存储：payload 是设置 JSON 全文。"""
+
+    __tablename__ = "sync_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_row_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    sync_updated_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sync_rev: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

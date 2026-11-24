@@ -5,6 +5,7 @@
    ========================================================================== */
 
 import { translateError } from "./i18n.js";
+import { localToken } from "./local-token.js";
 
 export class ApiError extends Error {
   constructor(status, body, message) {
@@ -70,6 +71,9 @@ async function request(method, path, { body, params, headers } = {}) {
     credentials: "same-origin",
     headers: { Accept: "application/json", ...(headers || {}) },
   };
+  // 桌面版：每个 /api/* 请求都要带本机令牌（服务端模式取不到令牌，整段不生效）。
+  const token = localToken();
+  if (token) init.headers["X-Local-Token"] = token;
   if (body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
@@ -93,13 +97,46 @@ async function request(method, path, { body, params, headers } = {}) {
 
 export const api = {
   get: (path, params) => request("GET", path, { params }),
-  post: (path, body) => request("POST", path, { body }),
-  put: (path, body) => request("PUT", path, { body }),
+  post: (path, body) => request("POST", path, { body }),  put: (path, body) => request("PUT", path, { body }),
   patch: (path, body) => request("PATCH", path, { body }),
   del: (path, body) => request("DELETE", path, { body }),
 };
 
 /* --------------------------- 用户端接口 --------------------------- */
+
+/* 文件上传：Multipart 不能复用 request() 的 JSON 封装。 */
+async function upload(path, file) {
+  const form = new FormData();
+  form.append("file", file, file.name || "upload");
+  const init = {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    body: form,
+  };
+  const token = localToken();
+  if (token) init.headers["X-Local-Token"] = token;
+  let response;
+  try {
+    response = await fetch(`${API_PREFIX}${path}`, init);
+  } catch (err) {
+    throw new ApiError(0, null, translateError({ detail: "error.server" }));
+  }
+  const payload = await parseBody(response);
+  if (!response.ok) {
+    throw new ApiError(response.status, payload, translateError(payload));
+  }
+  return payload;
+}
+
+export const importApi = {
+  parse: (file) => upload("/desktop/import/parse", file),
+  commit: (rows) => api.post("/desktop/import/commit", { rows }),
+};
+
+export const runtimeApi = {
+  info: () => api.get("/runtime"),
+};
 
 export const authApi = {
   me: () => api.get("/auth/me"),
@@ -137,6 +174,21 @@ export const accountApi = {
   deletionStatus: () => api.get("/account/deletion"),
   submitDeletion: (payload) => api.post("/account/deletion", payload),
   cancelDeletion: () => api.del("/account/deletion"),
+};
+
+/* 桌面版专用：整库导出 / 清空本机数据（服务端模式下这两个路由不存在） */
+export const desktopApi = {
+  exportData: () => api.get("/desktop/export"),
+  wipe: () => api.post("/desktop/wipe"),
+  checkUpdate: () => api.get("/desktop/update"),
+};
+
+export const syncApi = {
+  state: () => api.get("/desktop/sync/state"),
+  bind: (payload) => api.post("/desktop/sync/bind", payload),
+  create: (payload) => api.post("/desktop/sync/create", payload),
+  run: () => api.post("/desktop/sync/run"),
+  unbind: () => api.post("/desktop/sync/unbind"),
 };
 
 /* --------------------------- 管理端接口 --------------------------- */

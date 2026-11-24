@@ -20,6 +20,7 @@ from . import models
 from .api import build_api_router
 from .config import settings
 from .core import logkit
+from .core.local_guard import install_local_guard
 from .core.security import hash_password
 from .db import init_db, write_session
 from .desktop import ensure_local_user
@@ -164,9 +165,14 @@ def create_app() -> FastAPI:
 
     install_error_handlers(app)
     # Desktop mode does not mount the administrator API at all.
-    app.include_router(build_api_router(include_admin=not settings.DESKTOP))
+    app.include_router(
+        build_api_router(include_admin=not settings.DESKTOP, include_desktop=settings.DESKTOP)
+    )
 
     _install_frontend(app)
+    # Outermost middleware: in the desktop build every /api call must carry the
+    # per-launch token, before any route or CORS handling gets to look at it.
+    install_local_guard(app)
     return app
 
 

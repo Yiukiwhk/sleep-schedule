@@ -37,6 +37,13 @@ class Settings:
     # desktop: 单机桌面版（免登录本地档案、无管理后台、无冷却、不删数据）
     MODE: str = _env("MODE", "server").strip().lower()
     DESKTOP_USERNAME: str = _env("DESKTOP_USERNAME", "本机")
+    # 桌面壳每次启动生成的一次性令牌：非空时 /api/* 必须带 X-Local-Token。
+    # 留空（测试、手动 run.py）就不启用本地守卫。
+    LOCAL_TOKEN: str = _env("LOCAL_TOKEN", "")
+    # Desktop-created cloud accounts cannot sync right away (see DESKTOP.md 13).
+    SYNC_NEW_ACCOUNT_GRACE_HOURS: int = _env_int("SYNC_NEW_ACCOUNT_GRACE_HOURS", 24)
+    # Anti-abuse throttle for POST /api/sync/account (per IP per hour).
+    SYNC_ACCOUNT_RATE_LIMIT: int = _env_int("SYNC_ACCOUNT_RATE_LIMIT", 3)
 
     @property
     def DESKTOP(self) -> bool:

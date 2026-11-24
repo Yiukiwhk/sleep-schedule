@@ -98,6 +98,35 @@ Windows 也可直接运行 `start.bat`（等价于用虚拟环境解释器启动
 存在 `admin_credentials` 表，只能在**首次建库前**用环境变量 `SSP_BOOTSTRAP_ADMIN_PASSWORDS` 替换。
 **这三段默认值是公开的，请务必在部署上线前全部改掉。** 本系统**没有自助注册**，普通用户由管理员在后台创建。
 
+## 桌面版（Windows，实验性）
+
+同一套代码，把 `SSP_MODE` 切到 `desktop` 就变成「本机应用 + 可选云同步」：后端仍跑本机 uvicorn（只绑 `127.0.0.1`），
+外壳用 pywebview 开窗口，数据默认放 `%PROGRAMDATA%\YiukiSleep`。
+
+```powershell
+# 开发模式：起服务并开窗口（需要 pywebview，见 desktop\requirements-desktop.txt）
+desktop\.venv\Scripts\python.exe desktop\app.py
+
+# 只起后端、不建窗口（调试用）
+desktop\.venv\Scripts\python.exe desktop\app.py --serve-only --port 18012
+
+# 自检：起服务 → /healthz → /api/auth/me → 建一条记录 → 退出码 0
+desktop\.venv\Scripts\python.exe desktop\app.py --smoke
+
+# 打安装包（PyInstaller onedir + 可选 Inno Setup + SHA256SUMS + latest.json）
+desktop\build\build.ps1
+```
+
+桌面版与服务端的差别：
+
+- 没有登录页、没有管理后台、没有注册：首次启动自动建本机用户「本机」，数据全部留在本机。
+- 写入冷却为 0、不按 6 个月删数据；设置页把「注销账号 / 修改密码」换成「导出 JSON 备份 / 清空本机数据」。
+- 设置页可绑定云端账号做双向同步（LWW 合并、墓碑不复活、同步前自动导出 JSON 快照），也可导入 JSON / CSV / PDF；
+  截图 OCR 是可选依赖（`desktop\requirements-ocr.txt`），没装时界面会提示。
+- 只检查更新、不自动下载：建议直接跑 `user` 端即可，桌面版定位是「本机优先」。
+
+设计、协议与验收清单见 [docs/DESKTOP.md](docs/DESKTOP.md)。
+
 ## 目录结构
 
 ```text
@@ -116,10 +145,14 @@ sleep-schedule/
 │   ├── user/               # 用户端（index.html + js/pages/{records,advice,settings}.js + css）
 │   ├── admin/              # 管理后台（index.html + js/pages/{dashboard,users,logs,...}.js）
 │   └── shared/             # 共享层：api / i18n / ui / timeline / timepicker / references / base.css
+├── desktop/                # 桌面壳：入口 / 进程与窗口 / DPAPI 令牌 / 同步客户端 / 导入器 / 打包
+│   ├── app.py runtime.py security.py sync.py updater.py
+│   ├── importers/          # files（json/csv/pdf）+ ocr（可选依赖）
+│   └── build/              # app.spec / build.ps1 / installer.iss
 ├── scripts/                # 自检与工具：check_env / bootstrap_deps / smoke_http / check_*
-├── tests/                  # smoke_test / test_advice_engine / e2e_http / check_module_graph
+├── tests/                  # smoke_test / test_advice_engine / e2e_http / check_module_graph / 桌面与同步测试
 ├── deploy/                 # Nginx vhost、本地验收与发版脚本、只读诊断脚本
-└── docs/                   # 算法 / API / 配置 / 开发 / 部署 / 参考文献 / 截图
+├── docs/                   # 算法 / API / 配置 / 开发 / 部署 / 参考文献 / 截图 / DESKTOP.md
 ```
 
 ## 算法概览（引擎 `adaptive-v2`）

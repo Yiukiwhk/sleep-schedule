@@ -134,8 +134,60 @@ def init_db() -> None:
     _migrate_meal_checks_refused()
     _migrate_sleep_records_wake_date()
     _migrate_sleep_records_meal_date()
+    _migrate_sync_columns()
     _ensure_sqlite_pragmas()
 
+
+
+def _migrate_sync_columns() -> None:
+    """给同步用的两张表补 client_row_id / sync_updated_at / sync_rev / deleted_at。
+
+    create_all() 会建新表（sync_devices / sync_log / sync_settings），但不会给
+    已经存在的 sleep_records、meal_checks 加列。老库的行没有行标识：用随机
+    UUID 回填 client_row_id（此后永不变），sync_updated_at 记当前时间，
+    sync_rev 记 0（表示"还没有推送过"）。
+    """
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + (
+        f"{datetime.now(timezone.utc).microsecond // 1000:03d}Z"
+    )
+    columns = (
+        ("client_row_id", "VARCHAR(64)"),
+        ("sync_updated_at", "VARCHAR(32)"),
+        ("sync_rev", "INTEGER NOT NULL DEFAULT 0"),
+        ("deleted_at", "DATETIME"),
+    )
+    for table in ("sleep_records", "meal_checks"):
+        with engine.begin() as conn:
+            rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            if not rows:
+                continue
+            present = {row[1] for row in rows}
+            for name, ddl in columns:
+                if name not in present:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+            conn.execute(
+                text(
+                    f"CREATE INDEX IF NOT EXISTS ix_{table}_client_row_id "
+                    f"ON {table} (client_row_id)"
+                )
+            )
+            conn.execute(
+                text(f"CREATE INDEX IF NOT EXISTS ix_{table}_sync_rev ON {table} (sync_rev)")
+            )
+            missing = conn.execute(
+                text(f"SELECT id FROM {table} WHERE client_row_id IS NULL OR client_row_id = ''")
+            ).fetchall()
+            for (row_id,) in missing:
+                conn.execute(
+                    text(
+                        f"UPDATE {table} SET client_row_id = :cid, sync_updated_at = :ts "
+                        "WHERE id = :row_id"
+                    ),
+                    {"cid": uuid4().hex, "ts": stamp, "row_id": row_id},
+                )
 
 def _migrate_sleep_records_wake_date() -> None:
     """给 sleep_records 表补 wake_date 列，并按老规则回填（"入睡日 + 起床日"改动）。

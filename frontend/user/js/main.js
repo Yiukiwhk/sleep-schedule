@@ -6,6 +6,7 @@ import {
   accountApi,
   ApiError,
   authApi,
+  runtimeApi,
   settingsApi,
 } from "/shared/api.js";
 import {
@@ -19,6 +20,7 @@ import {
 } from "/shared/i18n.js";
 import { applyTheme, escapeHtml, qs, qsa, storedTheme, toastErr, toastOk } from "/shared/ui.js";
 import { hydrateIcons, setIcon } from "/shared/icons.js";
+import { captureLocalToken } from "/shared/local-token.js";
 import { renderAdvicePage } from "./pages/advice.js";
 import { renderRecordsPage } from "./pages/records.js";
 import { renderSettingsPage } from "./pages/settings.js";
@@ -35,7 +37,14 @@ export const state = {
   user: null,
   route: "records",
   meta: null,
+  // 桌面版才有值：{ desktop: true, version, schema_version, write_cooldown_seconds, ... }
+  runtime: null,
 };
+
+/** 桌面版标识；服务端模式恒为 false */
+export function isDesktopMode() {
+  return Boolean(state.runtime?.desktop);
+}
 
 /* ------------------------------ 视图切换 ------------------------------ */
 
@@ -304,7 +313,25 @@ function bindChrome() {
   });
 }
 
+async function loadRuntime() {
+  // /api/runtime 只有本机壳里才有意义；失败（例如老服务端）就当服务端模式处理。
+  try {
+    state.runtime = await runtimeApi.info();
+  } catch (err) {
+    state.runtime = null;
+  }
+  if (isDesktopMode()) {
+    document.documentElement.setAttribute("data-mode", "desktop");
+    // 桌面版没有登录/登出：本机档案由后端固定注入。
+    const logoutBtn = qs("#logout-btn");
+    if (logoutBtn) logoutBtn.hidden = true;
+  }
+  return state.runtime;
+}
+
 async function bootstrap() {
+  // 桌面版：先把 ?t= 里的本机令牌收进 sessionStorage，再清地址栏。必须早于任何 fetch。
+  captureLocalToken();
   loadLang();
   detectLang();
   applyTheme(storedTheme(), { persist: false });
@@ -313,6 +340,9 @@ async function bootstrap() {
   syncLangButtons();
   syncThemeButtons();
   bindChrome();
+
+  // 先并行去问运行模式，但不阻塞首屏：模式只影响设置页与登出按钮。
+  const runtimeReady = loadRuntime();
 
   // 刷新/首次进入：有上次的登录身份，就先把外壳和上一屏贴出来（0ms，不等 /auth/me），
   // 然后再去后台校验；身份不符、401 都会立刻清缓存并回登录页。
@@ -325,7 +355,11 @@ async function bootstrap() {
     showApp();
     renderUserChip();
     paintedFromCache = true;
+    // 设置页要按模式决定显示哪些卡片，必须等运行模式；其它页面先贴缓存。
+    if (state.route === "settings") await runtimeReady;
     await renderRoute({ cached: true });
+  } else {
+    await runtimeReady;
   }
 
   try {

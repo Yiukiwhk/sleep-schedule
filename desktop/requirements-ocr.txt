@@ -1,0 +1,9 @@
+# Optional OCR extras for screenshot import (docs/DESKTOP.md section 8.2).
+# Install into desktop/.venv with:
+#   pip install --no-cache-dir -r desktop/requirements-ocr.txt
+# Without these the app still imports JSON/CSV/PDF and tells the user that
+# screenshot import needs the OCR build.
+opencv-python-headless==4.12.0.88
+numpy==2.3.4
+onnxruntime==1.23.2
+rapidocr-onnxruntime==1.4.4

@@ -77,6 +77,50 @@ with TestClient(app) as client:
         "/api/auth/password", json={"current_password": "x", "new_password": "User@12345"}
     ).status_code
 
+    exported = client.get("/api/desktop/export")
+    result["export_status"] = exported.status_code
+    result["export"] = exported.json() if exported.status_code == 200 else None
+
+    sync_state = client.get("/api/desktop/sync/state")
+    result["sync_state_status"] = sync_state.status_code
+    result["sync_state"] = sync_state.json() if sync_state.status_code == 200 else None
+
+    offline = client.post(
+        "/api/desktop/sync/bind",
+        json={
+            "server": "http://127.0.0.1:1",
+            "username": "someone",
+            "password": "Someone#12345",
+            "mode": "merge",
+        },
+    )
+    result["sync_offline_status"] = offline.status_code
+    result["sync_offline_code"] = offline.json().get("code")
+
+    import_payload = json.dumps(
+        {
+            "records": [
+                {"record_date": day(3), "sleep_time": "22:45", "wake_time": "06:30"},
+            ]
+        }
+    ).encode("utf-8")
+    parsed = client.post(
+        "/api/desktop/import/parse",
+        files={"file": ("import.json", import_payload, "application/json")},
+    )
+    result["import_parse_status"] = parsed.status_code
+    result["import_parse"] = parsed.json() if parsed.status_code == 200 else None
+    committed = client.post(
+        "/api/desktop/import/commit",
+        json={"rows": [{"date": day(3), "sleep_time": "22:45", "wake_time": "06:30"}]},
+    )
+    result["import_commit_status"] = committed.status_code
+    result["import_commit"] = committed.json() if committed.status_code == 200 else None
+
+    wiped = client.post("/api/desktop/wipe")
+    result["wipe_status"] = wiped.status_code
+    result["wipe"] = wiped.json() if wiped.status_code == 200 else None
+
 with open(os.environ["SSP_PROBE_OUT"], "w", encoding="utf-8") as handle:
     json.dump(result, handle, ensure_ascii=False)
 '''
@@ -138,6 +182,22 @@ def test_desktop_mode_has_no_login_no_admin_and_no_cooldown() -> None:
     # 登录/改密入口按不存在处理。
     assert result["login"] == 404
     assert result["password"] == 404
+    # 桌面专属接口：导出、清空、云同步桥。
+    assert result["export_status"] == 200
+    assert result["export"]["format"] == "yiuki-sleep-export"
+    assert len(result["export"]["records"]) == 2
+    assert result["sync_state_status"] == 200
+    assert result["sync_state"]["bound"] is False
+    assert result["sync_offline_status"] == 409
+    assert result["sync_offline_code"] == "sync.failed"
+    # 导入：先解析文件（只读，不落地），再提交勾选行。
+    assert result["import_parse_status"] == 200
+    assert result["import_parse"]["count"] == 1
+    assert result["import_parse"]["records"][0]["date"]
+    assert result["import_commit_status"] == 200
+    assert result["import_commit"]["created"]
+    assert result["wipe_status"] == 200
+    assert result["wipe"]["deleted"]["records"] == 3
 
 
 @pytest.mark.desktop
@@ -154,3 +214,9 @@ def test_server_mode_keeps_login_and_admin() -> None:
     # 登录路由存在（凭据错误是 401，而不是 404）。
     assert result["login"] == 401
     assert result["password"] == 401
+    # 桌面专属接口不会出现在服务端实例上（GET 走 SPA 兜底 404，POST 没有路由是 405）。
+    assert result["export_status"] == 404
+    assert result["sync_state_status"] == 404
+    assert result["import_parse_status"] in (404, 405)
+    assert result["import_commit_status"] in (404, 405)
+    assert result["wipe_status"] in (404, 405)

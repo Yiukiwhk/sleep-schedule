@@ -20,8 +20,19 @@ tests/_tmp*/
 .pytest_cache/
 ssp-advice-test-*/
 ssp-dbg-*/
+yiuki-smoke-*/
+smoke-*/
+pip-install-*/
+pip-unpack-*/
+pip-ephem-wheel-cache-*/
+pip-metadata-*/
+pip-build-env-*/
+pip-build-tracker-*/
 coverage.xml
 htmlcov/
+
+# ---- PyInstaller 中间产物（desktop/build/ 下是源码，不能整体忽略）----
+/build/
 
 # ---- 本地部署凭据（只提交 .example 模板，绝不要提交真实值）----
 deploy/local.settings.ps1

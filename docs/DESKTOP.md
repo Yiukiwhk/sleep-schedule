@@ -327,4 +327,136 @@ class ImportResult:
 | `deploy\accept_local.ps1`（服务端模式全量） | `local acceptance: ALL PASS`（e2e 74 项全过） |
 | 8 个 `scripts/` 静态检查 | 全部 exit 0 |
 
-P1–P4 尚未开始。
+### P1 桌面壳与打包 —— 已完成（2026-11-25）
+
+后端：
+
+- `backend/app/version.py`（新增）：`VERSION` / `MIN_SUPPORTED` / `SCHEMA_VERSION`，同步与更新检查的唯一版本来源。
+- `backend/app/core/local_guard.py`（新增）：设了 `SSP_LOCAL_TOKEN` 才启用；`/api` 与 `/api/*` 缺 `X-Local-Token` 或值不符返回 403
+  `error.forbidden`；带 `Origin` 时只接受 `http://127.0.0.1:<port>` 与 `http://localhost:<port>`。
+- `backend/app/api/runtime_api.py`（新增）：`GET /api/runtime` 暴露 `{mode, desktop, version, min_supported, schema_version, retention_months, write_cooldown_seconds}`，供前端判断运行形态。
+- `backend/app/api/desktop_api.py`（新增，仅桌面模式装配）：`GET /api/desktop/export` 导出 `{format:"yiuki-sleep-export", version:1, exported_at, settings, records, meal_checks}`；
+  `POST /api/desktop/wipe` 清空本机记录/三餐/建议（保留本地档案）。
+- `backend/app/api/__init__.py`：`build_api_router(*, include_admin=True, include_desktop=False)`；`backend/app/main.py` 在 `create_app()` 末尾
+  `install_local_guard(app)`。
+- `backend/app/__init__.py`（新增）：`app` 原本是 namespace package，PyInstaller 无法解析 `app.main`，补一个空 `__init__.py` 后 onedir 产物才带上
+  `fastapi` / `uvicorn` / `app`。
+
+前端：
+
+- `frontend/shared/local-token.js`（新增）：把 `?t=<令牌>` 存进 `sessionStorage` 后 `history.replaceState` 清掉地址栏，`request()` 自动带 `X-Local-Token`。
+- `frontend/shared/api.js`：新增 `runtimeApi`、`desktopApi`、`syncApi`。
+- `frontend/user/js/main.js`：`bootstrap()` 先 `captureLocalToken()`，再并行拉 `/api/runtime`（`loadRuntime()` 不阻塞首屏，保住 boot-cache 的同步贴屏）；
+  桌面模式隐藏「退出登录」并给 `<html>` 打 `data-mode="desktop"`。
+- `frontend/user/js/pages/settings.js`：桌面模式隐藏修改密码与注销卡，换成「本机数据」（导出 JSON / 清空）与「云同步」卡。
+- `frontend/shared/i18n.js`：新增 `error.forbidden` 与桌面版相关 10 个键（zh/en 各一份，保持 CRLF）。
+
+桌面壳 `desktop/`：
+
+- `runtime.py`：数据目录（默认 `%PROGRAMDATA%\YiukiSleep`，`--per-user-data` 切 `%LOCALAPPDATA%`）、`config.json` 读写、端口认领、一次性本地令牌、`/healthz` 等待、
+  子进程环境变量拼装（frozen 时 `SSP_FRONTEND_DIR = sys._MEIPASS/frontend`）。
+- `security.py`：DPAPI（`CryptProtectData` / `CryptUnprotectData`，固定 entropy）加解密的设备令牌存储。
+- `app.py`：`--smoke` / `--serve-only` / `--port` / `--data-dir` / `--per-user-data` / `--version` / `--report`；`LocalServer` 用 uvicorn `Server` + 守护线程；
+  窗口模式用 pywebview 打开 `http://127.0.0.1:<port>/?t=<令牌>`，窗口关闭即停服务。
+- `requirements-desktop.txt`、`build/app.spec`、`build/build.ps1`：PyInstaller onedir +（可选）Inno Setup + `SHA256SUMS.txt`。
+
+验收（本机实跑）：
+
+| 项 | 结果 |
+|---|---|
+| `python desktop\app.py --smoke --report …` | 退出码 0；`/api/runtime` 200（desktop=true）、`/api/auth/me` 200（本机）、无令牌 403、建记录 201、`/admin/` 404 |
+| `pytest tests\test_desktop_shell.py` | 1 passed |
+| `pytest tests\test_advice_engine.py tests\test_desktop_mode.py tests\test_desktop_shell.py` | 35 passed |
+| 8 个 `scripts/` 静态检查 + `node --check`（改动的 5 个前端模块） | 全部通过 |
+
+### P2 云同步 —— 已完成（2026-11-25）
+
+服务端：
+
+- `backend/app/models.py`：`sleep_records` / `meal_checks` 增加 `client_row_id`、`sync_updated_at`、`sync_rev`、`deleted_at`；新增 `SyncDevice`、
+  `SyncLog`（单调递增 `rev` 游标日志）、`SyncSettings`。
+- `backend/app/db.py`：`_migrate_sync_columns()` 幂等补列/补索引，并给历史行回填 `client_row_id`（uuid4）与 `sync_updated_at`。
+- `backend/app/services/sync_engine.py`（新增）：行校验、LWW 合并（`updated_at` 新者胜，墓碑优先；`tie` 只在墓碑时为 1）、`SyncLog` 追加、游标分页拉取、
+  设备令牌生成/哈希、`status_payload`。
+- `backend/app/api/sync_api.py`（新增）：`POST /api/sync/devices`、`DELETE /api/sync/devices/{id}`、`GET /api/sync/status`、`POST /api/sync/push`、
+  `GET /api/sync/pull?cursor=`、`POST /api/sync/account`（仅 `X-Client: desktop`；同 IP 每小时 ≤ `SYNC_ACCOUNT_RATE_LIMIT`；新账号 24h 内不能同步——`SYNC_NEW_ACCOUNT_GRACE_HOURS` 可配）。
+- 推送先整批校验，失败返回 `{ok:false, violations:[…]}` 且一行都不落库；成功返回逐行 `applied` / `stale` 与新游标。
+
+桌面客户端：
+
+- `desktop/sync.py`（新增）：绑定/解绑（设备令牌只存 DPAPI 密文）、脏行收集、分批 push、按游标 pull + LWW 落到本地库、每次同步前导出 JSON 快照（保留 10 份）。
+  关键约束：push 响应里的游标是服务端位置，**不能**拿它推进本机 pull 游标；脏行必须带上本地 `updated_at`，否则会被服务端判成 `stale`。
+- `backend/app/api/desktop_api.py`：`GET /api/desktop/sync/state`、`POST /api/desktop/sync/{bind,create,run,unbind}` 桥接（`SyncError` → 409 `sync.failed`）。
+- `frontend/user/js/pages/settings.js`：「云同步」卡三态（未绑定 / 已绑定 / 同步异常），默认按「上传合并」绑定；解绑保留本机数据。
+- i18n 新增 17 个同步键（zh/en）。
+
+验收（本机实跑）：
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests\test_sync_protocol.py` | 1 passed（设备令牌、整批校验、幂等、墓碑、新账号宽限、限流） |
+| `pytest tests\test_sync_convergence.py` | 5 passed（两台机器 50 条双向收敛、重复推送幂等、墓碑不复活、较新备注双向胜出、断网绑定报错、三餐随记录同步） |
+| 全套 pytest（advice / desktop_mode / desktop_shell / sync_protocol / sync_convergence） | 41 passed |
+
+### P3 校验与导入 —— 已完成（2026-11-25）
+
+导入（本机解析，只把结构化结果发给后端）：
+
+- `desktop/importers/base.py`（新增）：`ImportRecord` / `ImportResult` 数据结构，`PARSER_VERSION = "1.0"`，低置信度阈值 `LOW_CONFIDENCE = 0.7`。
+- `desktop/importers/files.py`（新增）：`.json`（本应用导出格式、`records/data/items/rows` 包装、设备格式 `date/sleepTime/wakeTime`）、
+  `.csv`（表头别名含中文，`deep/light/rem` 分期列）、`.pdf`（pypdf 文本层，抽不到文本时返回 `import.needs_screenshot`）。
+  重复日期去重、坏行跳过并附 warning；编码按 `utf-8-sig` → `gb18030` 回退。
+- `desktop/importers/ocr.py`（新增，可选依赖）：RapidOCR + opencv，只在装了 `desktop/requirements-ocr.txt` 时可用；
+  未安装时接口返回 `import.ocr_unavailable`，界面上给同一句提示。**本轮未安装 OCR 依赖，也未打进安装包**（见 §12 P3 验收口径：截图 OCR 需另装可选依赖）。
+- `backend/app/api/desktop_api.py`：`POST /api/desktop/import/parse`（multipart，≤10 MiB）、`POST /api/desktop/import/commit`
+  （逐行复用记录校验：日期范围、起床日期、三餐日期、时间重叠；重复日期记 `import.already_exists`，其余错误进 `violations`，整批不因单行失败而回滚）。
+- `frontend/user/js/pages/settings.js`：「导入记录」卡——选文件 → 解析预览（逐行日期/入睡/起床/备注可改、显示置信度、低置信度默认不勾）→ 只提交勾选行。
+- `frontend/shared/api.js`：`upload()`（FormData + `X-Local-Token`）与 `importApi`。
+- i18n 新增 32 个导入键（zh/en），`check_i18n_keys.py`：584 keys、zh 584 = en 584、missing 0。
+
+同步前检查（服务端）：
+
+- `GET /api/sync/status` 返回 `server_version` / `min_client` / `schema_version` / `quota` / `violations`；
+  push 前的逐行校验错误码见 `backend/app/services/sync_engine.py`（`sync.bad_date`、`sync.wake_in_future`、`sync.meal_without_record` 等），
+  失败时整批不落库，客户端逐条显示。客户端版本/ schema 低于要求时返回 `sync.client_too_old` / `sync.schema_mismatch`。
+
+验收（本机实跑）：
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests\test_importers.py`（desktop\.venv） | 8 passed（导出格式、设备格式、CSV 分期、中文表头+BOM、坏行、PDF 无文本层、OCR 缺依赖） |
+| `pytest tests\test_desktop_mode.py` | 2 passed（含导入 parse/commit、导出、清空、离线绑定 409） |
+| 真实 UI 手工点一遍 | 桌面模式下设置页出现「本机数据 / 云同步 / 导入记录」三张卡；服务端模式退回密码卡+危险区 |
+
+### P4 发布与更新 —— 已完成（2026-11-25）
+
+- `desktop/build/installer.iss`（新增，Inno Setup 6）：装到 `{autopf}\YiukiSleep`，`PrivilegesRequired=admin`，
+  卸载只删程序目录，**`%PROGRAMDATA%\YiukiSleep` 明确保留**。没有 ISCC 时 `build.ps1` 自动跳过，只产出 onedir + zip 前的目录。
+- `desktop/build/build.ps1`：pytest（可 `-SkipTests`）→ PyInstaller（`desktop/build/app.spec`）→ 跑 `dist\desktop\YiukiSleep\YiukiSleep.exe --smoke --report` →
+  `SHA256SUMS.txt` → `dist\desktop\latest.json`（`version` / `min_supported` / `notes` / `url` / `sha256` / `size`）。
+- `backend/app/version.py` 的 `VERSION` 是版本唯一来源；`desktop/__init__.py` 与上一行保持一致，`build.ps1` 从后者读版本号。
+- `desktop/updater.py`（新增）：读 `https://yiuki.me/desktop/latest.json`，`parse_version` / `is_newer` / `check()`；
+  网络或格式失败只返回 `error` 不抛异常；非 https 下载地址与非法 sha256 进 `warnings`。
+- `GET /api/desktop/update`（仅桌面模式）：返回 `{ok, current, latest, notes, url, sha256, size, min_supported, update_available, error, warnings}`。
+- 设置页只在发现新版本时显示一行「发现新版本 x.y.z，可前往下载」的链接，**不自动下载、不静默替换**。
+- `docs/DESKTOP.md` 的安装/升级/卸载手工清单见下；`README.md` 增加桌面版章节。
+
+手工清单（未在干净虚拟机上执行，按顺序即可复现）：
+
+1. 干净 Windows：装 `YiukiSleep-setup-0.1.0.exe` → 首次启动不出现登录页 → 设置页显示本机用户「本机」。
+2. 建一条记录 → 关窗口 → 重新打开 → 记录仍在（数据在 `%PROGRAMDATA%\YiukiSleep\data\app.db`）。
+3. 设置页绑定云端账号 → 立即同步 → 另一台机器绑定同一账号后能看到记录；删除一条后同步，另一台不复活。
+4. 导入 JSON / CSV / PDF（无文本层的 PDF 会给「请改用截图」提示）。
+5. 断网后点同步：提示 `网络不可用…`，本机数据不受影响。
+6. 把 `latest.json` 的 version 改大后重启：设置页出现更新链接，点了只开浏览器。
+7. 卸载：程序目录删除，`%PROGRAMDATA%\YiukiSleep` 保留；重装后数据还在。
+
+验收（本机实跑）：
+
+| 项 | 结果 |
+|---|---|
+| `pytest tests\test_updater.py`（desktop\.venv） | 5 passed（版本比较、清单解析、非 https/sha 告警、网络失败、缺 version） |
+| `desktop\build\build.ps1 -SkipTests` | exit 0：bundle `--smoke` ok、`SHA256SUMS.txt` 与 `latest.json` 生成 |
+| `deploy\accept_local.ps1`（服务端模式全量） | `local acceptance: ALL PASS` |
+
+已知未做：代码签名、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证、OCR 依赖未进安装包。
