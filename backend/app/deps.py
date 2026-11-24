@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
+from . import desktop
 from .config import settings
 from .core.security import client_ip, client_ua
 from .db import get_db
@@ -38,6 +39,9 @@ def request_context(request: Request) -> RequestContext:
 
 
 def optional_user(request: Request, db: Session = Depends(get_db)) -> User | None:
+    if desktop.is_desktop():
+        # 桌面版没有登录：本地档案就是当前用户。
+        return desktop.local_user(db)
     user, _ = sessions.resolve_session(request, sessions.SCOPE_USER)
     if user is None:
         return None
@@ -45,6 +49,11 @@ def optional_user(request: Request, db: Session = Depends(get_db)) -> User | Non
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    if desktop.is_desktop():
+        user = desktop.local_user(db)
+        if user is None or not user.is_active:
+            raise ApiError(500, "error.server", code="error.server")
+        return user
     user, _ = sessions.resolve_session(request, sessions.SCOPE_USER)
     if user is None:
         raise ApiError(401, "error.not_authenticated", code="error.not_authenticated")

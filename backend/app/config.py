@@ -32,6 +32,16 @@ class Settings:
 
     APP_NAME: str = "Sleep Schedule Planner"
 
+    # ---------- 运行模式 ----------
+    # server : 线上/局域网多用户（登录、管理后台、写入冷却、6 个月保留）
+    # desktop: 单机桌面版（免登录本地档案、无管理后台、无冷却、不删数据）
+    MODE: str = _env("MODE", "server").strip().lower()
+    DESKTOP_USERNAME: str = _env("DESKTOP_USERNAME", "本机")
+
+    @property
+    def DESKTOP(self) -> bool:
+        return self.MODE == "desktop"
+
     # ---------- 服务 ----------
     HOST: str = _env("HOST", "0.0.0.0")
     PORT: int = _env_int("PORT", 8000)
@@ -62,10 +72,12 @@ class Settings:
     LOGIN_FAILURE_WINDOW_SECONDS: int = _env_int("LOGIN_FAILURE_WINDOW_SECONDS", 15 * 60)
 
     # ---------- 写入节流 ----------
-    WRITE_COOLDOWN_SECONDS: int = _env_int("WRITE_COOLDOWN_SECONDS", 10)
+    # 桌面版是单机单人，没有并发写入，默认不节流。
+    WRITE_COOLDOWN_SECONDS: int = _env_int("WRITE_COOLDOWN_SECONDS", 0 if MODE == "desktop" else 10)
 
     # ---------- 数据保留 ----------
-    RETENTION_MONTHS: int = _env_int("RETENTION_MONTHS", 6)
+    # 桌面版数据只在本机，保留期设为 100 年（等于不删）。
+    RETENTION_MONTHS: int = _env_int("RETENTION_MONTHS", 1200 if MODE == "desktop" else 6)
     CLEANUP_INTERVAL_SECONDS: int = _env_int("CLEANUP_INTERVAL_SECONDS", 6 * 3600)
 
     # ---------- 分页 ----------

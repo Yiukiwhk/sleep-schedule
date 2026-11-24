@@ -38,7 +38,13 @@ def _credentials_error(failures: int, locked_seconds: int = 0, *, known: bool = 
     )
 
 
-@router.post("/auth/login", response_model=UserPublic)
+def _reject_in_desktop() -> None:
+    """桌面版没有登录/登出/改密：这些入口一律按「不存在」处理。"""
+    if settings.DESKTOP:
+        raise ApiError(404, "error.not_found", code="error.not_found")
+
+
+@router.post("/auth/login", response_model=UserPublic, dependencies=[Depends(_reject_in_desktop)])
 def login(
     payload: LoginRequest,
     request: Request,
@@ -74,7 +80,7 @@ def login(
     return user
 
 
-@router.post("/auth/admin/login", response_model=UserPublic)
+@router.post("/auth/admin/login", response_model=UserPublic, dependencies=[Depends(_reject_in_desktop)])
 def admin_login(
     payload: AdminLoginRequest,
     request: Request,
@@ -146,7 +152,7 @@ def admin_login(
     return user
 
 
-@router.post("/auth/logout", response_model=MessageOut)
+@router.post("/auth/logout", response_model=MessageOut, dependencies=[Depends(_reject_in_desktop)])
 def logout(
     request: Request,
     response: Response,
@@ -158,7 +164,7 @@ def logout(
     return MessageOut(message="auth.logged_out")
 
 
-@router.post("/auth/admin/logout", response_model=MessageOut)
+@router.post("/auth/admin/logout", response_model=MessageOut, dependencies=[Depends(_reject_in_desktop)])
 def admin_logout(
     request: Request,
     response: Response,
@@ -180,13 +186,13 @@ def admin_me(user: User = Depends(current_admin)) -> User:
     return user
 
 
-@router.get("/auth/admin/parts")
+@router.get("/auth/admin/parts", dependencies=[Depends(_reject_in_desktop)])
 def admin_parts() -> dict:
     """告知前端管理员登录需要几段密码（不泄露账号信息）。"""
     return {"parts": settings.ADMIN_PASSWORD_PARTS}
 
 
-@router.post("/auth/password", response_model=MessageOut)
+@router.post("/auth/password", response_model=MessageOut, dependencies=[Depends(_reject_in_desktop)])
 def change_password(
     payload: ChangePasswordRequest,
     request: Request,

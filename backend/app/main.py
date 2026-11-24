@@ -17,11 +17,12 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 from . import models
-from .api import api_router
+from .api import build_api_router
 from .config import settings
 from .core import logkit
 from .core.security import hash_password
 from .db import init_db, write_session
+from .desktop import ensure_local_user
 from .errors import install_error_handlers
 from .models import utcnow
 from .services.retention import run_cleanup
@@ -107,25 +108,32 @@ async def lifespan(app: FastAPI):
     settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
     logkit.install_db_log_handler()
-    bootstrap_admin()
+    if settings.DESKTOP:
+        # Desktop mode: a single local profile, no administrator account.
+        ensure_local_user()
+    else:
+        bootstrap_admin()
     try:
         run_cleanup()
     except Exception:  # pragma: no cover
         logger.exception("startup cleanup failed")
-    task = asyncio.create_task(_cleanup_loop(), name="ssp-cleanup")
+    # Desktop data is never expired, so the periodic cleanup task is not needed.
+    task = None if settings.DESKTOP else asyncio.create_task(_cleanup_loop(), name="ssp-cleanup")
     logger.info(
-        "service started: http://%s:%s (db=%s, frontend=%s)",
+        "service started: http://%s:%s (mode=%s, db=%s, frontend=%s)",
         settings.HOST,
         settings.PORT,
+        settings.MODE,
         settings.DB_PATH,
         settings.FRONTEND_DIR,
     )
     try:
         yield
     finally:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         logger.info("service stopped")
 
 
@@ -155,7 +163,8 @@ def create_app() -> FastAPI:
     )
 
     install_error_handlers(app)
-    app.include_router(api_router)
+    # Desktop mode does not mount the administrator API at all.
+    app.include_router(build_api_router(include_admin=not settings.DESKTOP))
 
     _install_frontend(app)
     return app
@@ -170,6 +179,7 @@ def _install_frontend(app: FastAPI) -> None:
 
     user_index = frontend_dir / "user" / "index.html"
     admin_index = frontend_dir / "admin" / "index.html"
+    desktop = settings.DESKTOP
 
     @app.get("/healthz", include_in_schema=False)
     def _healthz() -> dict:
@@ -189,7 +199,9 @@ def _install_frontend(app: FastAPI) -> None:
             name="user",
         )
 
-    if (frontend_dir / "admin").exists():
+    # Desktop mode has no administrator UI: neither the static mount nor the
+    # SPA fallback may expose /admin.
+    if not desktop and (frontend_dir / "admin").exists():
         app.mount(
             "/admin",
             StaticFiles(directory=str(frontend_dir / "admin"), html=True),
@@ -198,6 +210,10 @@ def _install_frontend(app: FastAPI) -> None:
 
     @app.get("/", include_in_schema=False)
     def _root():
+        if desktop and user_index.exists():
+            # Serve the app directly (no /user/ redirect) so the local token in
+            # the query string survives the first load.
+            return FileResponse(user_index)
         if user_index.exists():
             return RedirectResponse(url="/user/")
         return JSONResponse(status_code=404, content={"detail": "error.not_found"})
@@ -222,8 +238,14 @@ def _install_frontend(app: FastAPI) -> None:
         if full_path and candidate.is_file():
             return FileResponse(candidate)
 
-        if full_path.startswith("admin") and admin_index.exists():
-            return FileResponse(admin_index)
+        if full_path.startswith("admin"):
+            if desktop:
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": "error.not_found", "code": "error.not_found"},
+                )
+            if admin_index.exists():
+                return FileResponse(admin_index)
         if user_index.exists():
             return FileResponse(user_index)
         return JSONResponse(status_code=404, content={"detail": "error.not_found"})
