@@ -113,6 +113,9 @@ desktop\.venv\Scripts\python.exe desktop\app.py --serve-only --port 18012
 # 自检：起服务 → /healthz → /api/auth/me → 建一条记录 → 退出码 0
 desktop\.venv\Scripts\python.exe desktop\app.py --smoke
 
+# 打包产物端到端检查（先 build，再验证重启后数据还在）
+desktop\.venv\Scripts\python.exe -m pytest tests\test_desktop_frozen.py -q
+
 # 打安装包（PyInstaller onedir + 可选 Inno Setup + SHA256SUMS + latest.json）
 desktop\build\build.ps1
 ```

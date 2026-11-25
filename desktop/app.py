@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -271,7 +272,9 @@ def main(argv: list[str] | None = None) -> int:
     config = runtime.load_config(paths["config_file"])
     requested = args.port if args.port is not None else int(config.get("port") or 0)
     port = runtime.claim_port(requested)
-    token = runtime.new_token()
+    # Automation (and the packaged-app test) may pin the token; normally it is
+    # fresh on every start and never leaves the process + the window URL.
+    token = os.environ.get("SSP_LOCAL_TOKEN", "").strip() or runtime.new_token()
     _prepare_environment(paths, port=port, token=token)
 
     if args.serve_only:
