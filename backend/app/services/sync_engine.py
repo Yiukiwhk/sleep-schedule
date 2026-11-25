@@ -456,6 +456,12 @@ def apply_rows(
             if existing is None:
                 existing = _new_stub(session, user.id, table, cid)
             _apply_payload(table, existing, payload)
+            if table == "user_settings":
+                # 设置既要进同步行，也要写回 User（网页端读的是 User 行）。
+                # 用当前写会话里的 User，调用方传进来的可能属于另一个会话。
+                owner = session.get(models.User, user.id)
+                if owner is not None:
+                    _apply_settings_to_user(owner, payload)
             existing.deleted_at = None
             if table == "advice_plans":
                 # 方案是"每用户一份活跃快照"：落地的这份变活跃，其余置非活跃。
@@ -550,6 +556,22 @@ def _apply_payload(table: str, row: Any, payload: dict) -> None:
         row.payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
+def _apply_settings_to_user(user: models.User, payload: dict[str, Any]) -> None:
+    """把设置行里的字段写回服务端 User，网页端与后续 pull 才看得到。"""
+    for key in (
+        "target_sleep_time",
+        "target_wake_time",
+        "language",
+        "theme",
+        "meal_breakfast",
+        "meal_lunch",
+        "meal_dinner",
+        "meal_anchor",
+    ):
+        if key in payload and payload[key] is not None:
+            setattr(user, key, payload[key])
+
+
 def _find_plan(session: Session, user_id: int, cid: str) -> models.AdvicePlan | None:
     """方案按"每用户一份活跃快照"处理：先按 client_row_id 找，再退回当前活跃行。"""
     row = session.execute(
@@ -633,6 +655,16 @@ def active_plan_row(session: Session, user: models.User) -> dict[str, Any] | Non
     if row is None:
         return None
     return _row_payload("advice_plans", row, plan_payload(row))
+
+
+def active_settings_row(session: Session, user: models.User) -> dict[str, Any] | None:
+    """当前设置行（目标作息等），给桌面端"选云端方案同时改目标作息"用。"""
+    row = session.execute(
+        select(models.SyncSettings).where(models.SyncSettings.user_id == user.id)
+    ).scalars().first()
+    if row is None or row.deleted_at is not None:
+        return None
+    return _row_payload("user_settings", row, settings_payload(user))
 
 
 def _row_payload(table: str, row: Any, payload: dict[str, Any]) -> dict[str, Any]:

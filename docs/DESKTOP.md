@@ -167,9 +167,12 @@ desktop/
 
 **方案同步（0.1.2 起）**：`advice_plans` 与记录一样有 `client_row_id`/`sync_updated_at`/`sync_rev`。
 每台机器只保留一份活跃方案；推送/拉取时把同用户其它活跃行自动置为非活跃。
-绑定完成后桌面端调用 `GET /api/sync/plan` 取云端活跃方案，与本机方案比对：
-两边都有且目标时间不同则 UI 弹出「使用本机方案 / 使用云端方案」二选一——
-选云端时忽略 LWW、强制落地云端那行（`apply_pull_row(..., force=True)`），选本机时把本机行的时间戳刷新后 push 覆盖云端。
+绑定完成后桌面端拿 `GET /api/sync/plan`（方案）与 `GET /api/sync/settings`（目标作息）与本机比对：
+任一不同，就在同步完成后弹**一个**窗口，问「使用云端方案 / 使用本机方案」——
+选云端会忽略 LWW、把云端方案与云端目标作息（`user_settings` 行）一起强制落地
+（`apply_pull_row(..., force=True)` 两次），因此不会出现"方案变了但目标作息没变"；
+选本机则刷新本机方案与用户资料的时间戳，由下一次 push 把本机方案与目标作息一起覆盖云端。
+只在两边都有方案且确有差异时提示；用户做完选择后 `plan_state.needs_choice` 归 false，不会反复弹。
 不认识的表名在客户端直接跳过（`apply_pull_row` 返回 `ignored`），因此旧客户端拉到方案行不会报错。
 
 **行标识**：每行有 `client_row_id`（UUID v4，本机生成，永不变）+ `updated_at`（UTC ISO8601，毫秒）。
@@ -194,6 +197,7 @@ desktop/
 | POST | `/api/sync/push` | `{cursor, rows:[{table, client_row_id, updated_at, deleted_at, payload}]}` → 逐行结果 + 新游标 |
 | GET | `/api/sync/pull?cursor=` | 增量拉取 + `has_more` |
 | GET | `/api/sync/plan` | 云端当前活跃方案（绑定后让用户选本机/云端） |
+| GET | `/api/sync/settings` | 云端设置行（目标作息、三餐开关），选云端方案时一并采用 |
 | POST | `/api/sync/account` | 选项 B 用：桌面端新建账号（限流 + `X-Client: desktop`） |
 
 **合规性检查（每次同步前，服务端执行）**
@@ -453,9 +457,12 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 - 推送先整批校验，失败返回 `{ok:false, violations:[…]}` 且一行都不落库；成功返回逐行 `applied` / `stale` 与新游标。
 - **方案也同步**（2026-11-26 追加）：`advice_plans` 只传当前活跃方案（历史快照留本机）；`sync_engine.plan_payload()` /
   `active_plan_row()`、`GET /api/sync/plan`；单行 payload 上限从 8 KB 放宽到 64 KB。绑定后设置页对比本机与云端的
-  开始日期/目标时间，不一致就显示「使用本机方案 / 使用云端方案」，选择结果经
-  `POST /api/desktop/sync/plan` 落地（选云端走 `force=True` 忽略 LWW，选本机则刷新时间戳后 push 覆盖云端）。
-  旧客户端不认识 `advice_plans` 行时 `apply_pull_row()` 返回 `ignored` 直接跳过，所以不用改 `SCHEMA_VERSION`。
+  方案**和目标作息**（`GET /api/sync/settings` + `sync_engine.active_settings_row()`），任一不同就弹一个窗：
+  「使用云端方案」= 方案与目标作息一起强制落地（两次 `force=True`），「使用本机方案」= 刷新本机时间戳后 push 覆盖云端。
+  选择结果经 `POST /api/desktop/sync/plan` 落地。旧客户端不认识 `advice_plans` 行时 `apply_pull_row()` 返回 `ignored`
+  直接跳过，所以不用改 `SCHEMA_VERSION`。
+  同时修了一个服务端缺陷：push 上来的 `user_settings` 过去只写进 `SyncSettings.payload`，没有写回 `User` 行，
+  导致「云端目标作息」永远是旧值；现在 `apply_rows()` 调 `_apply_settings_to_user()`，用**写会话里**的 User 实例落地。
 - **网页侧的写入也要能被拉到**（2026-11-26 修复）：同步上线前就存在的行 `sync_rev` 全是 0，而 pull 只返回 `rev > cursor`，
   于是新建的桌面端会看到「pushed 0 / pulled 0」——记录明明在库里。现在：
   - `sync_engine.backfill_missing()` 在启动时（`main.py` 的 lifespan，`init_db()` 之后）给 `sync_rev = 0` 的行补 rev、
@@ -644,3 +651,23 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
   选云端生效 → 新机器 C 拉到同一方案 → B 改成本地方案后选「使用本机」覆盖云端），6 passed；desktop 套件 30 passed / 2 skipped。
 - 产物：`YiukiSleep-setup-0.1.2.exe`（72,003,864 字节，sha256
   `a2c0a8b94eefc1741edec4750a5e659e64b6a2a59ab6d08681476947178ee5e1`），`latest.json` 已发布（HTTP 200，指向 0.1.2 安装包）。
+
+### 0.1.3（2026-11-26）
+
+- **一个弹窗同时管方案与目标作息**：云同步完成后，只要「方案」或「目标作息」有一边不同，就弹一个窗口问
+  「使用云端方案 / 使用本机方案」。选云端 = 方案与目标作息（`user_settings` 行）都强制落地云端
+  （`apply_pull_row(..., force=True)` 两次）；选本机 = 保持本机现状，刷新方案与用户资料时间戳后 push 覆盖云端。
+  不再把选择做成卡片里的两个按钮，也不会连弹两个窗。
+- 新增 `GET /api/sync/settings` + `sync_engine.active_settings_row()`：桌面端据此拿到云端目标作息做对比
+  （`desktop/sync.py` 的 `plan_state()` 现在返回 `local_target` / `cloud_target`，`needs_choice` 覆盖两类差异）。
+  修了服务端一个真实缺陷：push 上来的 `user_settings` 过去只写 `SyncSettings.payload`，没有写回 `User` 行，
+  于是「云端目标作息」永远是旧值；`apply_rows()` 现在调用 `_apply_settings_to_user()`（用写会话里的 User 实例）。
+- 前端：`settings.js` 用 `confirmDialog()` 呈现比较结果（云端/本机各一行「自 X 起，目标 A–B，共 N 天」），
+  按钮文案复用 `settings.syncPlanCloud` / `settings.syncPlanLocal`；新增 `settings.syncChoiceTitle` / `settings.syncChoiceHint`。
+  i18n 594 keys、zh 593 = en 593、missing 0。
+- 测试：`test_sync_convergence` 的方案用例扩展为「方案 + 目标作息」——A 上传 23:00–07:00 方案与目标作息，
+  B 本机 00:30–08:30 + 目标 01:00–09:00，选云端后 B 的目标作息变成 23:00–07:00；之后 B 改成 22:00 方案 +
+  21:30–05:30 目标并选本机，新机器 C pull 到 22:00 与 21:30–05:30。6 passed。
+- 版本号 0.1.2 → 0.1.3；部署自证 4am 段新增 `active_settings_row` / `_apply_settings_to_user` / `@router.get("/settings")` 三条 grep。
+- 已知小事：从聊天/文件卡片里双击安装包会因沙箱令牌写不了 `%TEMP%\is-*.tmp` 报 `Error 5: 拒绝访问`；
+  从桌面/资源管理器双击，或直接用免安装 zip，不受影响。

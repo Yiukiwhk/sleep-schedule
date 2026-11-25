@@ -295,6 +295,26 @@ def _client(payload: dict) -> int:
                     )
             elif name == "plan_state":
                 results.append({"op": name, "plan_state": sync.plan_state(paths)})
+            elif name == "set_target":
+                with db.SessionLocal() as session:
+                    user = session.query(models.User).order_by(models.User.id).first()
+                    user.target_sleep_time = str(op["sleep"])
+                    user.target_wake_time = str(op["wake"])
+                    user.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    session.commit()
+                results.append({"op": name, "sleep": op["sleep"], "wake": op["wake"]})
+            elif name == "targets":
+                with db.SessionLocal() as session:
+                    user = session.query(models.User).order_by(models.User.id).first()
+                    results.append(
+                        {
+                            "op": name,
+                            "targets": {
+                                "target_sleep_time": user.target_sleep_time,
+                                "target_wake_time": user.target_wake_time,
+                            },
+                        }
+                    )
             elif name == "choose_plan":
                 results.append(
                     {

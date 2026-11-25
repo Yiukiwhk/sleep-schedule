@@ -328,18 +328,59 @@ function planLine(summary) {
   );
 }
 
-function planChoiceHtml(plan) {
+function planCompareHtml(plan) {
   if (!plan || !plan.needs_choice) return "";
   return `
       <div class="field" id="sync-plan-choose">
         <label>${escapeHtml(t("settings.syncPlanChoice"))}</label>
         <span class="tiny muted">${escapeHtml(t("settings.syncPlanLocal"))}: ${planLine(plan.local)}</span>
         <span class="tiny muted">${escapeHtml(t("settings.syncPlanCloud"))}: ${planLine(plan.cloud)}</span>
-        <div class="row-wrap">
-          <button class="btn btn-primary" id="sync-plan-local">${escapeHtml(t("settings.syncPlanLocal"))}</button>
-          <button class="btn" id="sync-plan-cloud">${escapeHtml(t("settings.syncPlanCloud"))}</button>
-        </div>
       </div>`;
+}
+
+function planChoiceBody(plan) {
+  const local = plan?.local || {};
+  const cloud = plan?.cloud || {};
+  const localTarget = plan?.local_target || {};
+  const cloudTarget = plan?.cloud_target || {};
+  const line = (label, summary, target) => {
+    const sleep = summary.target_sleep_time || target.target_sleep_time || "-";
+    const wake = summary.target_wake_time || target.target_wake_time || "-";
+    const start = summary.start_date || "-";
+    return `<p style="margin:6px 0"><strong>${escapeHtml(label)}</strong>：${escapeHtml(
+      t("settings.syncPlanSummary", { start, sleep, wake, days: summary.days ?? 0 })
+    )}</p>`;
+  };
+  return `
+      ${line(t("settings.syncPlanCloud"), cloud, cloudTarget)}
+      ${line(t("settings.syncPlanLocal"), local, localTarget)}
+      <p class="tiny muted" style="margin-top:10px">${escapeHtml(t("settings.syncChoiceHint"))}</p>`;
+}
+
+async function askPlanChoice(root, ctx, plan) {
+  const useCloud = await confirmDialog({
+    title: t("settings.syncChoiceTitle"),
+    bodyHtml: planChoiceBody(plan),
+    okText: t("settings.syncPlanCloud"),
+    cancelText: t("settings.syncPlanLocal"),
+  });
+  const box = qs("#sync-card", root);
+  if (box) {
+    box.querySelectorAll("button").forEach((btn) => {
+      btn.disabled = true;
+    });
+  }
+  try {
+    await syncApi.choosePlan(useCloud ? "cloud" : "local");
+    toastOk(t("settings.syncPlanDone"));
+  } catch (err) {
+    const target = box ? qs("#sync-error", box) : null;
+    if (target) {
+      target.hidden = false;
+      target.textContent = err instanceof Error ? err.message : String(err);
+    }
+  }
+  await loadSyncCard(root, ctx);
 }
 
 function syncCardHtml(info, plan) {
@@ -382,7 +423,7 @@ function syncCardHtml(info, plan) {
         <button class="btn btn-primary" id="sync-now">${escapeHtml(t("settings.syncNow"))}</button>
         <button class="btn" id="sync-unbind">${escapeHtml(t("settings.syncUnbind"))}</button>
       </div>
-      ${planChoiceHtml(plan)}
+      ${planCompareHtml(plan)}
       <div class="form-error" id="sync-error" hidden></div>`;
 }
 
@@ -469,30 +510,6 @@ async function loadSyncCard(root, ctx) {
     }
   });
 
-  qs("#sync-plan-local", box)?.addEventListener("click", async () => {
-    busy(true);
-    try {
-      await syncApi.choosePlan("local");
-      toastOk(t("settings.syncPlanDone"));
-      await loadSyncCard(root, ctx);
-    } catch (err) {
-      busy(false);
-      fail(err);
-    }
-  });
-
-  qs("#sync-plan-cloud", box)?.addEventListener("click", async () => {
-    busy(true);
-    try {
-      await syncApi.choosePlan("cloud");
-      toastOk(t("settings.syncPlanDone"));
-      await loadSyncCard(root, ctx);
-    } catch (err) {
-      busy(false);
-      fail(err);
-    }
-  });
-
   qs("#sync-unbind", box)?.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: t("settings.syncUnbind"),
@@ -508,6 +525,11 @@ async function loadSyncCard(root, ctx) {
       fail(err);
     }
   });
+
+  if (info && info.bound && plan && plan.needs_choice) {
+    // 云同步完成后只弹一个窗：方案与目标作息要不要一起用云端的。
+    askPlanChoice(root, ctx, plan);
+  }
 }
 
 function importRowHtml(row, index) {

@@ -278,6 +278,20 @@ def sync_plan(
     return {"ok": True, "available": row is not None, "row": row}
 
 
+@router.get("/settings")
+def sync_settings(
+    request: Request,
+    user: models.User = Depends(device_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """云端当前设置（目标作息、三餐开关）——桌面端选"云端方案"时一并采用。"""
+    violations = _check_client_headers(request) + _grace_violation(user, db, request)
+    if violations:
+        return {"ok": False, "violations": violations, "available": False}
+    row = sync_engine.active_settings_row(db, user)
+    return {"ok": True, "available": row is not None, "row": row}
+
+
 @router.post("/account")
 def create_sync_account(
     payload: AccountIn,

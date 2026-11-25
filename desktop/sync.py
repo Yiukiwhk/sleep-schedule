@@ -233,6 +233,23 @@ def local_plan_summary(paths: dict[str, Path]) -> dict[str, Any]:
         return plan_summary(active_plan(session, user.id, models))
 
 
+def local_targets(paths: dict[str, Path]) -> dict[str, str]:
+    """本机目标作息（给"选云端方案时要一起改目标作息"的提示用）。"""
+    db, models = _import_backend()
+    with db.SessionLocal() as session:  # type: ignore[attr-defined]
+        user = session.query(models.User).order_by(models.User.id).first()
+        if user is None:
+            return {}
+        return {
+            key: value
+            for key, value in (
+                ("target_sleep_time", user.target_sleep_time),
+                ("target_wake_time", user.target_wake_time),
+            )
+            if value
+        }
+
+
 def cloud_plan(client: HttpClient, binding: dict[str, Any]) -> dict[str, Any] | None:
     """云端当前活跃方案（一行 pull 格式），没有则 None。"""
     status, body = client.request(
@@ -246,30 +263,80 @@ def cloud_plan(client: HttpClient, binding: dict[str, Any]) -> dict[str, Any] | 
     return row if isinstance(row, dict) else None
 
 
+def cloud_settings(client: HttpClient, binding: dict[str, Any]) -> dict[str, Any] | None:
+    """云端当前设置行（含目标作息），老服务器没有这个接口时返回 None。"""
+    status, body = client.request(
+        "GET", "/api/sync/settings", headers={"X-Device-Token": binding.get("token", "")}
+    )
+    if status != 200 or not body.get("ok") or not body.get("available"):
+        return None
+    row = body.get("row")
+    return row if isinstance(row, dict) else None
+
+
+def _settings_targets(row: dict[str, Any] | None) -> dict[str, str]:
+    """云端设置里的目标作息；没设过的键直接不返回，避免"空 vs 有"反复弹窗。"""
+    if not row:
+        return {}
+    payload = row.get("payload") or {}
+    return {
+        key: value
+        for key, value in (
+            ("target_sleep_time", payload.get("target_sleep_time")),
+            ("target_wake_time", payload.get("target_wake_time")),
+        )
+        if value
+    }
+
+
 def plan_state(paths: dict[str, Path]) -> dict[str, Any]:
-    """本机与云端的方案对比；两边都有时 needs_choice=True。"""
+    """本机与云端的"方案 + 目标作息"对比；任一项不同就 needs_choice=True。"""
     local = local_plan_summary(paths)
+    local_target = local_targets(paths)
     cloud: dict[str, Any] = {"available": False}
+    cloud_target: dict[str, str] = {}
     binding = load_binding(paths)
     if binding is not None:
+        client = HttpClient(binding.get("server", ""))
         try:
-            row = cloud_plan(HttpClient(binding.get("server", "")), binding)
+            row = cloud_plan(client, binding)
         except SyncError:
             row = None
         if row is not None:
             cloud = plan_summary(row)
-    conflict = bool(local.get("available") and cloud.get("available"))
-    if conflict and (
-        local.get("start_date") == cloud.get("start_date")
-        and local.get("target_sleep_time") == cloud.get("target_sleep_time")
-        and local.get("target_wake_time") == cloud.get("target_wake_time")
-    ):
-        conflict = False
-    return {"local": local, "cloud": cloud, "needs_choice": conflict}
+        try:
+            cloud_target = _settings_targets(cloud_settings(client, binding))
+        except SyncError:
+            cloud_target = {}
+    plan_diff = bool(
+        local.get("available")
+        and cloud.get("available")
+        and (
+            local.get("start_date") != cloud.get("start_date")
+            or local.get("target_sleep_time") != cloud.get("target_sleep_time")
+            or local.get("target_wake_time") != cloud.get("target_wake_time")
+        )
+    )
+    target_diff = bool(
+        local_target
+        and cloud_target
+        and local_target != cloud_target
+    )
+    return {
+        "local": local,
+        "cloud": cloud,
+        "local_target": local_target,
+        "cloud_target": cloud_target,
+        "needs_choice": plan_diff or target_diff,
+    }
 
 
 def choose_plan(paths: dict[str, Path], choice: str) -> dict[str, Any]:
-    """用户在"本机方案 / 云端方案"之间做选择后落地，再跑一次同步把结果对齐。"""
+    """用户选"本机 / 云端"后落地，再跑一次同步把两边对齐。
+
+    ``cloud``：方案与目标作息都改成云端的（服务端设置行一起强制落地）。
+    ``local``：本机保持现状，把方案与目标作息都标成"刚改过"，由下一次 push 覆盖云端。
+    """
     binding = load_binding(paths)
     if binding is None:
         raise SyncError("尚未绑定云端账号")
@@ -279,11 +346,14 @@ def choose_plan(paths: dict[str, Path], choice: str) -> dict[str, Any]:
         row = cloud_plan(client, binding)
         if row is None:
             raise SyncError("云端还没有方案")
+        settings_row = cloud_settings(client, binding)
         with db.SessionLocal() as session:  # type: ignore[attr-defined]
             user = session.query(models.User).order_by(models.User.id).first()
             if user is None:
                 raise SyncError("本机还没有本地账号")
             apply_pull_row(session, user, row, models, force=True)
+            if settings_row is not None:
+                apply_pull_row(session, user, settings_row, models, force=True)
             session.commit()
     elif choice == "local":
         with db.SessionLocal() as session:  # type: ignore[attr-defined]
@@ -293,8 +363,9 @@ def choose_plan(paths: dict[str, Path], choice: str) -> dict[str, Any]:
             row = active_plan(session, user.id, models)
             if row is None:
                 raise SyncError("本机还没有方案")
-            # 让这条行看起来"刚改过"，下一次 push 就会覆盖云端。
+            # 让本机方案与目标作息都看起来"刚改过"，下一次 push 就会覆盖云端。
             row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            user.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.commit()
     else:
         raise SyncError("未知的方案选择")
