@@ -5,7 +5,12 @@ Usage:
   YiukiSleep.exe --smoke          headless self-check, exit code 0 on success
   YiukiSleep.exe --serve-only     run the server without a window (debugging)
   YiukiSleep.exe --per-user-data  keep data in %LOCALAPPDATA% instead of %PROGRAMDATA%
+  YiukiSleep.exe --machine-data   force %PROGRAMDATA% even for a portable copy
   YiukiSleep.exe --data-dir PATH  explicit data folder (tests)
+
+Data folder default: an installed copy (under Program Files) uses the shared
+%PROGRAMDATA%\YiukiSleep profile; a portable copy uses %LOCALAPPDATA%, because
+a standard user cannot write into a %PROGRAMDATA% folder that it merely created.
 
 Security model (see docs/DESKTOP.md sections 4-5): the server binds 127.0.0.1
 only, and every /api/* request must carry the one-shot token that is handed to
@@ -52,6 +57,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=None, help="fixed port (default: ask the OS)")
     parser.add_argument("--data-dir", default=None, help="override the data folder")
     parser.add_argument("--per-user-data", action="store_true", help="store data per Windows user")
+    parser.add_argument("--machine-data", action="store_true", help="force the shared ProgramData folder")
     parser.add_argument("--version", action="store_true", help="print the version and exit")
     return parser.parse_args(argv)
 
@@ -289,7 +295,13 @@ def run_window(paths: dict[str, Path], config: dict, *, port: int, token: str) -
     try:
         server.start()
     except Exception as exc:  # noqa: BLE001
-        _show_error(f"could not start the local service:\n{exc}")
+        hint = ""
+        if isinstance(exc, PermissionError) or "Errno 13" in str(exc):
+            hint = (
+                "\n\nThe data folder is not writable. Start the app with --per-user-data "
+                "or install it with the setup so %PROGRAMDATA% gets the right permissions."
+            )
+        _show_error(f"could not start the local service:\n{exc}{hint}")
         return 1
 
     url = f"{runtime.build_url(port)}/?t={token}"
@@ -318,6 +330,24 @@ def run_window(paths: dict[str, Path], config: dict, *, port: int, token: str) -
 # --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
+def _exe_dir() -> Path:
+    """Folder the running copy lives in (frozen: next to the exe)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def _data_dir_error(root: Path, problem: str) -> str:
+    return (
+        "could not prepare the data folder:\n"
+        f"{root}\n{problem}\n\n"
+        "The app needs a writable folder. Either\n"
+        "  * install it with YiukiSleep-setup-*.exe (the setup grants access to %PROGRAMDATA%),\n"
+        "  * start it with --per-user-data to keep data under %LOCALAPPDATA%\\YiukiSleep, or\n"
+        "  * start it with --data-dir PATH to use a folder you can write to."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(list(sys.argv[1:] if argv is None else argv))
     if args.version:
@@ -330,9 +360,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.check_gui:
         return run_gui_check(args.report)
 
-    root = runtime.app_root(per_user=args.per_user_data, override=args.data_dir)
+    root = runtime.app_root(
+        per_user=args.per_user_data,
+        machine=args.machine_data,
+        override=args.data_dir,
+        exe_dir=_exe_dir(),
+    )
     paths = runtime.data_paths(root)
-    runtime.ensure_dirs(paths)
+    try:
+        runtime.ensure_dirs(paths)
+        problem = runtime.probe_writable(root)
+    except OSError as exc:  # noqa: BLE001 - turned into a dialog below
+        problem = str(exc)
+    if problem:
+        _show_error(_data_dir_error(root, problem))
+        return 2
     config = runtime.load_config(paths["config_file"])
     requested = args.port if args.port is not None else int(config.get("port") or 0)
     port = runtime.claim_port(requested)

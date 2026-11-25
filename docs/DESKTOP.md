@@ -85,10 +85,12 @@ desktop/
 `password_hash` 写入一个随机不可用值，永远不走密码登录）。桌面模式启动时自动为该用户建会话，
 前端 `/api/auth/me` 直接返回它，因此不出现登录页。
 
-**数据目录**：默认 `%PROGRAMDATA%\YiukiSleep\`（机器级，符合「同一台电脑的不同 Windows 用户是一个档案」）：
+**数据目录**：默认位置取决于运行方式——**安装版**（程序在 `%ProgramFiles%\YiukiSleep`）用机器级
+`%PROGRAMDATA%\YiukiSleep\`（符合「同一台电脑的不同 Windows 用户是一个档案」）；
+**便携版**（green/onedir 目录放在任意可写位置）用 `%LOCALAPPDATA%\YiukiSleep\`。
 
 ```
-%PROGRAMDATA%\YiukiSleep\
+<root>\
   data\app.db          # SQLite
   logs\app.log
   models\              # OCR/分期模型，按 manifest 下载
@@ -96,9 +98,18 @@ desktop/
   device.json          # 绑定信息（不含 token 明文，token 走 DPAPI）
 ```
 
-- 目录用继承 ACL 创建（`os.makedirs` + 默认安全描述符即可）；安装器不改成 Everyone 可写。
-- 提供 `--per-user-data` 开关切到 `%LOCALAPPDATA%\YiukiSleep\`（多 Windows 用户各自独立）。
-- 卸载默认**保留**数据；卸载页提供「同时删除我的数据」勾选。
+- 为什么便携版不能用机器级：`%PROGRAMDATA%` 下由普通用户新建的目录会继承 `C:\ProgramData` 的 ACL，
+  `BUILTIN\Users` 只有 `ReadAndExecute`。第一次启动能靠「目录上的 create-file 权限」写出 `app.log`，
+  之后每次重开都按文件自身 DACL 检查，直接 `[Errno 13] Permission denied`；`app.db` 同理。
+  便携版没有安装器去授权，所以默认退到用户目录。
+- **安装版**必须由安装器授权：`desktop/build/installer.iss` 的 `[Dirs]` 给
+  `{commonappdata}\YiukiSleep`、`data`、`logs`、`backup`、`models` 都加 `Permissions: users-modify`，
+  否则同机标准用户装完也写不进去（这是 0.1.0 的实测缺陷）。
+- 开关：`--per-user-data` 强制用户级、`--machine-data` 强制机器级、`--data-dir PATH` 显式指定；
+  三者互斥校验在 `runtime.app_root()`，`per_user and machine` 直接抛 `ValueError`。
+- 启动时用 `runtime.probe_writable()`（创建目录 + 写删 `.write-probe`）先探一次可写性；
+  失败弹窗说明三种出路（装安装包 / `--per-user-data` / `--data-dir`），退出码 2，而不是让 uvicorn 半路崩。
+- 卸载默认**保留**数据；卸载只删 `{app}`，不碰 `<root>`。
 
 **迁移**：本地库沿用服务端 `init_db()` 的迁移函数，版本号记在 `schema_meta` 表，
 同步时上报 `schema_version`（见 §7 合规校验）。
@@ -459,7 +470,7 @@ class ImportResult:
 手工清单（未在干净虚拟机上执行，按顺序即可复现）：
 
 1. 干净 Windows：装 `YiukiSleep-setup-0.1.0.exe` → 首次启动不出现登录页 → 设置页显示本机用户「本机」。
-2. 建一条记录 → 关窗口 → 重新打开 → 记录仍在（数据在 `%PROGRAMDATA%\YiukiSleep\data\app.db`）。
+2. 建一条记录 → 关窗口 → 重新打开 → 记录仍在（安装版数据在 `%PROGRAMDATA%\YiukiSleep\data\app.db`，便携版在 `%LOCALAPPDATA%\YiukiSleep\data\app.db`）。
 3. 设置页绑定云端账号 → 立即同步 → 另一台机器绑定同一账号后能看到记录；删除一条后同步，另一台不复活。
 4. 导入 JSON / CSV / PDF（无文本层的 PDF 会给「请改用截图」提示）。
 5. 断网后点同步：提示 `网络不可用…`，本机数据不受影响。
@@ -472,6 +483,8 @@ class ImportResult:
 |---|---|
 | `pytest tests\test_updater.py`（desktop\.venv） | 5 passed（版本比较、清单解析、非 https/sha 告警、网络失败、缺 version） |
 | `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed / 1 skipped / 7.90s（**打包产物**：无令牌 403、建记录 201、重启后记录仍在、同步接口 200、multipart 导入 parse/commit 200、截图 OCR 返回 `source="ocr"`；第二条 `--smoke` + `--check-gui` 在本仓库路径下按环境限制 skip，见「已知限制」） |
+| `pytest tests\test_desktop_runtime.py`（desktop\.venv） | 5 passed（安装版→ProgramData、便携版→LocalAppData、三个开关胜负关系、`per_user+machine` 抛错、不可写目录探测） |
+| 把新 onedir 装到 `%LOCALAPPDATA%\Programs\YiukiSleep` 后**在沙箱外**启动 | `--serve-only`：`db=C:\Users\…\AppData\Local\YiukiSleep\data\app.db`，`/healthz` 200、`/` 200、无令牌 `/api/runtime` 403；`--check-gui`：`{"ok": true, "backend": "winforms", "dotnet": "netfx"}` |
 | `desktop\build\build.ps1`（含 pytest + PyInstaller + Inno） | exit 0：`bundled --smoke ok`、`YiukiSleep-setup-0.1.0.exe`（68.7 MB）、`SHA256SUMS.txt` 与 `latest.json` 生成 |
 | 安装包内容抽查（`innoextract -l`） | `app\YiukiSleep.exe` 13.2 MiB + `app\_internal\…` 完整 |
 | 把 onedir 复制到 `C:\Temp\ys-final` 后 `YiukiSleep.exe --check-gui` | `{"ok": true, "backend": "winforms", "dotnet": "netfx"}`，退出码 0（证明窗口后端在普通目录可用） |
@@ -481,6 +494,17 @@ class ImportResult:
 `--smoke` 的报告新增 `"cffi": true/false`。原因是 0.1.0 首次发布时漏了 `cffi`：`clr-loader` 当初用 `--no-deps` 安装，
 `clr_loader/ffi/__init__.py` 里 `import cffi` 在打包时被 PyInstaller 忽略，双击窗口直接崩在 .NET 初始化。
 现在 `app.spec` 显式 hiddenimport `cffi` / `_cffi_backend`，`tests\test_desktop_frozen.py` 用打包产物断言 `smoke["cffi"] is True`。
+
+数据目录缺陷（0.1.0 发布后修复）：便携版原先无条件用 `%PROGRAMDATA%\YiukiSleep`，而该目录由普通用户创建时继承
+`C:\ProgramData` 的 ACL（`BUILTIN\Users` 只有 `ReadAndExecute`），第一次能建出 `app.log`，第二次启动就
+`[Errno 13] Permission denied: 'C:\ProgramData\YiukiSleep\logs\app.log'`。修复分两半：
+
+- 便携版默认 `%LOCALAPPDATA%\YiukiSleep`（`runtime.default_root_mode()` 按 exe 是否在 Program Files 判断），
+  安装版仍用机器级；新增 `--machine-data` 强制机器级、`--per-user-data` 强制用户级、`--data-dir` 覆盖；
+  `runtime.app_root()` 拒绝 `per_user + machine` 同时给。
+- 安装包用 `[Dirs] … Permissions: users-modify` 给 `{commonappdata}\YiukiSleep\{data,logs,backup,models}` 授权，
+  这样安装版的多用户共享才真正可写。
+- 启动前 `runtime.probe_writable()` 探一次可写性，失败弹窗给出三种出路并返回 2；`tests\test_desktop_runtime.py` 锁住这套选择逻辑。
 
 自动化小口子：`desktop/app.py` 正常每次启动随机生成本机令牌；测试或脚本可以用环境变量 `SSP_LOCAL_TOKEN` 固定它
 （打包产物测试就是靠这个带令牌访问 `/api/*`），不设置时行为不变。
@@ -494,6 +518,9 @@ class ImportResult:
   或把整个 `YiukiSleep\` 目录移到 `%LOCALAPPDATA%\Programs\YiukiSleep` 之类的普通目录。
   程序在这种情况下会弹「could not load the window backend」并附上这条指引，而不是静默退出。
 - 安装包需要在干净虚拟机上手工走一遍安装/升级/卸载（见上一节清单），本机无管理员权限、未做。
+- **不要从编码代理的沙箱里启动**（例如在聊天里点文件卡片打开 exe）：这类进程只能写自己的工作区，
+  连 `%LOCALAPPDATA%\YiukiSleep` 的 `mkdir`/写文件都会被拒（WinError 5），程序会弹「could not prepare the data folder」。
+  双击桌面快捷方式、开始菜单或资源管理器启动不受影响（本机已用 WMI 在沙箱外启动同一份产物验证通过）。
 
 已知未做：代码签名（安装包与 exe 均未签名）、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证、
 `latest.json` 与安装包尚未发布到 `yiuki.me/desktop/`（发布动作按约定不在本机执行）。

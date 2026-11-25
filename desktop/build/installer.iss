@@ -4,8 +4,9 @@
 ;   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\build\build.ps1
 ; build.ps1 passes /DMyVersion=<version> and compiles only when ISCC.exe exists.
 ;
-; The installer puts program files under %ProgramFiles%\YiukiSleep and never
-; touches %PROGRAMDATA%\YiukiSleep, so records survive upgrades and uninstalls.
+; The installer puts program files under %ProgramFiles%\YiukiSleep and only
+; creates/authorises %PROGRAMDATA%\YiukiSleep (the shared machine profile); it
+; never deletes it, so records survive upgrades and uninstalls.
 
 #ifndef MyVersion
   #define MyVersion "0.1.0"
@@ -49,6 +50,17 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\..\dist\desktop\YiukiSleep\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Dirs]
+; %PROGRAMDATA%\YiukiSleep is shared machine-wide, and only this setup runs
+; elevated: without the explicit grant a standard user could create the folder
+; (the first launch does) but every later launch would fail to open app.log and
+; app.db with "Permission denied".
+Name: "{commonappdata}\YiukiSleep"; Permissions: users-modify
+Name: "{commonappdata}\YiukiSleep\data"; Permissions: users-modify
+Name: "{commonappdata}\YiukiSleep\logs"; Permissions: users-modify
+Name: "{commonappdata}\YiukiSleep\backup"; Permissions: users-modify
+Name: "{commonappdata}\YiukiSleep\models"; Permissions: users-modify
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

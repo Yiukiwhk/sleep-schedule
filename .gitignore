@@ -18,6 +18,7 @@ logs/
 tests/_tmp/
 tests/_tmp*/
 .pytest_cache/
+pytest-of-*/
 ssp-advice-test-*/
 ssp-dbg-*/
 yiuki-smoke-*/

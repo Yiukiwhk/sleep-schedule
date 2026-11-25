@@ -39,17 +39,85 @@ def _local_app_data() -> Path:
     return Path(base) if base else Path.home() / "AppData" / "Local"
 
 
-def app_root(*, per_user: bool = False, override: str | os.PathLike | None = None) -> Path:
+def program_files_dirs() -> list[Path]:
+    """Every Program Files root the process knows about."""
+    roots: list[Path] = []
+    for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432"):
+        value = os.environ.get(name)
+        if value:
+            roots.append(Path(value))
+    return roots
+
+
+def is_installed_location(exe_dir: Path) -> bool:
+    """True when the running copy lives under a Program Files folder."""
+    try:
+        exe_dir = Path(exe_dir).resolve()
+    except OSError:
+        return False
+    for base in program_files_dirs():
+        try:
+            base = base.resolve()
+        except OSError:
+            continue
+        if exe_dir == base or base in exe_dir.parents:
+            return True
+    return False
+
+
+def default_root_mode(exe_dir: Path) -> str:
+    """Machine-wide data only for installed copies, per-user for portable ones.
+
+    A portable copy cannot fix ACLs on %PROGRAMDATA%, so a standard user could
+    create the folder but never write into it (Errno 13 on app.log). Installed
+    copies get those ACLs from the setup, so they can share one profile per PC.
+    """
+    return "machine" if is_installed_location(exe_dir) else "user"
+
+
+def app_root(
+    *,
+    per_user: bool = False,
+    machine: bool = False,
+    override: str | os.PathLike | None = None,
+    exe_dir: Path | None = None,
+) -> Path:
     """Return the folder that holds data, logs and models.
 
-    Default is machine-wide (%PROGRAMDATA%\\YiukiSleep): one profile per PC.
-    ``--per-user-data`` switches to %LOCALAPPDATA%\\YiukiSleep; ``--data-dir``
-    overrides both (used by tests and by the --smoke self-check).
+    Installed copies default to machine-wide (%PROGRAMDATA%\\YiukiSleep): one
+    profile per PC. Portable copies default to %LOCALAPPDATA%\\YiukiSleep, and
+    ``--per-user-data`` / ``--machine-data`` force either side; ``--data-dir``
+    overrides everything (tests and the --smoke self-check).
     """
     if override:
         return Path(override).expanduser().resolve()
-    parent = _local_app_data() if per_user else _program_data()
+    if per_user and machine:
+        raise ValueError("per_user and machine are mutually exclusive")
+    if per_user:
+        parent = _local_app_data()
+    elif machine:
+        parent = _program_data()
+    else:
+        mode = default_root_mode(exe_dir) if exe_dir else "machine"
+        parent = _program_data() if mode == "machine" else _local_app_data()
     return (parent / APP_FOLDER).resolve()
+
+
+def probe_writable(root: Path) -> str | None:
+    """Return an error string when ``root`` cannot hold files, else None."""
+    root = Path(root)
+    probe = root / ".write-probe"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe.write_text("ok", encoding="ascii")
+        probe.unlink()
+    except OSError as exc:
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+        return str(exc)
+    return None
 
 
 def data_paths(root: Path) -> dict[str, Path]:
