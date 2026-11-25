@@ -46,7 +46,8 @@ def _say(text: str) -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="YiukiSleep", description="Yiuki Sleep desktop client")
     parser.add_argument("--smoke", action="store_true", help="run the self-check and exit")
-    parser.add_argument("--report", default=None, help="write the --smoke report to this file")
+    parser.add_argument("--check-gui", action="store_true", help="check pywebview/.NET and exit")
+    parser.add_argument("--report", default=None, help="write the --smoke/--check-gui report to this file")
     parser.add_argument("--serve-only", action="store_true", help="start the local server, no window")
     parser.add_argument("--port", type=int, default=None, help="fixed port (default: ask the OS)")
     parser.add_argument("--data-dir", default=None, help="override the data folder")
@@ -135,6 +136,15 @@ class LocalServer:
 # --------------------------------------------------------------------------- #
 # Self-check (--smoke)
 # --------------------------------------------------------------------------- #
+def _module_present(name: str) -> bool:
+    """True when the module can be imported in this process (frozen or not)."""
+    try:
+        __import__(name)
+    except Exception:  # noqa: BLE001 - only the boolean matters here
+        return False
+    return True
+
+
 def smoke_workdir() -> Path:
     """Self-check data folder: prefer the gitignored .tmp/ when running from source."""
     repo_root = Path(__file__).resolve().parent.parent
@@ -176,6 +186,9 @@ def run_smoke(report_path: str | None = None) -> int:
         # package did not make it into the bundle.
         status, sync_state = runtime.request_json(f"{base}/api/desktop/sync/state", token=token)
         report["sync_state"] = {"status": status, "bound": sync_state.get("bound")}
+        # pythonnet reaches .NET through cffi; if the build forgets it the window
+        # dies with "No module named 'cffi'" (see --check-gui).
+        report["cffi"] = _module_present("cffi") and _module_present("_cffi_backend")
         report["ok"] = (
             report["runtime"].get("desktop") is True
             and report["me"].get("status") == 200
@@ -192,6 +205,44 @@ def run_smoke(report_path: str | None = None) -> int:
     finally:
         server.stop()
         report["data_dir"] = str(workdir)
+    text = json.dumps(report, ensure_ascii=False, indent=2)
+    if report_path:
+        Path(report_path).write_text(text + "\n", encoding="utf-8")
+    _say(text)
+    return 0 if report.get("ok") else 1
+
+
+def _load_webview_backend() -> tuple[bool, str]:
+    """Import pywebview's Windows backend (pythonnet -> .NET Framework host).
+
+    The host refuses to load managed DLLs from folders Windows maps to a
+    "network" zone, which is what a sandboxed checkout under Documents looks
+    like; installed builds under %PROGRAMFILES% or %LOCALAPPDATA% are fine.
+    """
+    runtime_name = os.environ.get("PYTHONNET_RUNTIME") or "netfx"
+    try:
+        import webview  # noqa: F401
+        import webview.platforms.winforms  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - reported by the caller
+        return False, f"{type(exc).__name__}: {exc}"
+    return True, runtime_name
+
+
+def run_gui_check(report_path: str | None = None) -> int:
+    """Load pywebview + its Windows backend without opening a window.
+
+    The bundled app uses .NET through pythonnet; a missing native dependency
+    (cffi, the runtime DLL) only shows up here, so the packaged-app test runs
+    this before it trusts the window.
+    """
+    report: dict = {"ok": False}
+    ok, detail = _load_webview_backend()
+    report["ok"] = ok
+    if ok:
+        report["backend"] = "winforms"
+        report["dotnet"] = detail
+    else:
+        report["error"] = detail
     text = json.dumps(report, ensure_ascii=False, indent=2)
     if report_path:
         Path(report_path).write_text(text + "\n", encoding="utf-8")
@@ -221,11 +272,18 @@ def _window_geometry(config: dict) -> tuple[int, int]:
 
 
 def run_window(paths: dict[str, Path], config: dict, *, port: int, token: str) -> int:
-    try:
-        import webview
-    except ImportError as exc:
-        _show_error(f"pywebview is not installed: {exc}")
+    ready, detail = _load_webview_backend()
+    if not ready:
+        hint = ""
+        if "Python.Runtime" in detail:
+            hint = (
+                "\n\nThis folder cannot host the .NET runtime. Install the app (the setup "
+                "puts it under %PROGRAMFILES%\\YiukiSleep) or move the whole folder to "
+                "%LOCALAPPDATA%\\Programs\\YiukiSleep."
+            )
+        _show_error("could not load the window backend:\n" + detail + hint)
         return 1
+    import webview
 
     server = LocalServer(port)
     try:
@@ -248,6 +306,10 @@ def run_window(paths: dict[str, Path], config: dict, *, port: int, token: str) -
 
     try:
         webview.start()
+    except Exception as exc:  # noqa: BLE001 - a windowed exe has no console
+        # Without this the process would die silently (console=False).
+        _show_error("could not open the window:\n" + f"{type(exc).__name__}: {exc}")
+        return 1
     finally:
         server.stop()
     return 0
@@ -265,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.smoke:
         return run_smoke(args.report)
+    if args.check_gui:
+        return run_gui_check(args.report)
 
     root = runtime.app_root(per_user=args.per_user_data, override=args.data_dir)
     paths = runtime.data_paths(root)

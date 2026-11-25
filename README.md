@@ -113,6 +113,9 @@ desktop\.venv\Scripts\python.exe desktop\app.py --serve-only --port 18012
 # 自检：起服务 → /healthz → /api/auth/me → 建一条记录 → 退出码 0
 desktop\.venv\Scripts\python.exe desktop\app.py --smoke
 
+# 只检查窗口后端（pywebview + pythonnet + .NET），不开窗口
+desktop\.venv\Scripts\python.exe desktop\app.py --check-gui
+
 # 打包产物端到端检查（先 build，再验证重启后数据还在）
 desktop\.venv\Scripts\python.exe -m pytest tests\test_desktop_frozen.py -q
 
@@ -131,6 +134,9 @@ desktop\build\build.ps1
   运行时 `parse` 响应的 `ocr_available` 为 `false`，界面提示截图导入需要 OCR 版。
 - 只检查更新、不自动下载：建议直接跑 `user` 端即可，桌面版定位是「本机优先」。
 - 没有管理员权限装 Inno Setup 时，把官方安装包用 `innoextract` 解到 `desktop\build\innosetup\`，`build.ps1` 会优先用它编译安装包。
+- 别从「网络位置」目录直接双击：.NET Framework 拒绝从网络区域加载托管 DLL（报 `Failed to resolve Python.Runtime.Loader.Initialize`）。
+  装到 `%PROGRAMFILES%\YiukiSleep`，或把整个 `YiukiSleep\` 目录移到 `%LOCALAPPDATA%\Programs\YiukiSleep` 再运行；
+  这种情况程序会弹窗说明原因，不会静默退出。
 
 设计、协议与验收清单见 [docs/DESKTOP.md](docs/DESKTOP.md)。
 

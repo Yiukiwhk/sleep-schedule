@@ -50,6 +50,10 @@ hidden = [
     # pywebview picks its GUI backend at runtime (EdgeChromium on Windows).
     "webview.platforms.edgechromium",
     "webview.platforms.winforms",
+    # clr_loader talks to the .NET host through cffi, which it imports inside a
+    # try/except; without these the window dies with "No module named 'cffi'".
+    "cffi",
+    "_cffi_backend",
 ]
 
 datas = [(str(ROOT / "frontend"), "frontend")]

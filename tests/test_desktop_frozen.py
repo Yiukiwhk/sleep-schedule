@@ -205,3 +205,47 @@ def test_frozen_app_keeps_data_across_restart() -> None:
     finally:
         _stop(proc)
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _run_report(work: Path, flag: str, name: str) -> dict:
+    report = work / f"{name}.json"
+    proc = subprocess.run(
+        [str(EXE), flag, "--report", str(report)],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=240,
+    )
+    assert report.exists(), f"{flag} produced no report (rc={proc.returncode}): {proc.stdout}{proc.stderr}"
+    return json.loads(report.read_text(encoding="utf-8"))
+
+
+def test_frozen_smoke_reports_cffi_and_gui_backend() -> None:
+    """0.1.0 shipped without cffi, so the window died on .NET startup.
+
+    `--smoke` is the quick service check; `--check-gui` loads pywebview's
+    Windows backend (cffi + pythonnet + the .NET host) without opening a window.
+    """
+    work = ROOT / ".tmp" / f"frozen-gui-{uuid4().hex[:8]}"
+    work.mkdir(parents=True, exist_ok=True)
+    try:
+        smoke = _run_report(work, "--smoke", "smoke")
+        assert smoke["ok"] is True, smoke
+        assert smoke["cffi"] is True, "cffi/_cffi_backend missing from the bundle"
+
+        gui = _run_report(work, "--check-gui", "gui")
+        if not gui.get("ok"):
+            error = str(gui.get("error", ""))
+            if "Failed to resolve Python.Runtime.Loader.Initialize" in error:
+                pytest.skip(
+                    "this checkout path is treated as a network zone by the .NET Framework host, "
+                    "which refuses to load managed DLLs from it; the same bundle passes from C:\\Temp "
+                    "and from %PROGRAMFILES%"
+                )
+            pytest.fail(f"window backend did not load: {error}")
+        assert gui["backend"] == "winforms"
+        assert gui["dotnet"] in ("netfx", "coreclr")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

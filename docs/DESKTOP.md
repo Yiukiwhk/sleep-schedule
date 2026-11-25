@@ -359,7 +359,7 @@ class ImportResult:
 - `runtime.py`：数据目录（默认 `%PROGRAMDATA%\YiukiSleep`，`--per-user-data` 切 `%LOCALAPPDATA%`）、`config.json` 读写、端口认领、一次性本地令牌、`/healthz` 等待、
   子进程环境变量拼装（frozen 时 `SSP_FRONTEND_DIR = sys._MEIPASS/frontend`）。
 - `security.py`：DPAPI（`CryptProtectData` / `CryptUnprotectData`，固定 entropy）加解密的设备令牌存储。
-- `app.py`：`--smoke` / `--serve-only` / `--port` / `--data-dir` / `--per-user-data` / `--version` / `--report`；`LocalServer` 用 uvicorn `Server` + 守护线程；
+- `app.py`：`--smoke` / `--serve-only` / `--check-gui` / `--port` / `--data-dir` / `--per-user-data` / `--version` / `--report`；`LocalServer` 用 uvicorn `Server` + 守护线程；
   窗口模式用 pywebview 打开 `http://127.0.0.1:<port>/?t=<令牌>`，窗口关闭即停服务。
 - `requirements-desktop.txt`、`build/app.spec`、`build/build.ps1`：PyInstaller onedir +（可选）Inno Setup + `SHA256SUMS.txt`。
 
@@ -471,13 +471,29 @@ class ImportResult:
 | 项 | 结果 |
 |---|---|
 | `pytest tests\test_updater.py`（desktop\.venv） | 5 passed（版本比较、清单解析、非 https/sha 告警、网络失败、缺 version） |
-| `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed / 5.41s（**打包产物**：无令牌 403、建记录 201、重启后记录仍在、同步接口 200、multipart 导入 parse/commit 200、截图 OCR 返回 `source="ocr"`） |
-| `desktop\build\build.ps1`（含 pytest + PyInstaller + Inno） | exit 0：`bundled --smoke ok`、`YiukiSleep-setup-0.1.0.exe`（68.4 MB）、`SHA256SUMS.txt` 与 `latest.json` 生成 |
+| `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed / 1 skipped / 7.90s（**打包产物**：无令牌 403、建记录 201、重启后记录仍在、同步接口 200、multipart 导入 parse/commit 200、截图 OCR 返回 `source="ocr"`；第二条 `--smoke` + `--check-gui` 在本仓库路径下按环境限制 skip，见「已知限制」） |
+| `desktop\build\build.ps1`（含 pytest + PyInstaller + Inno） | exit 0：`bundled --smoke ok`、`YiukiSleep-setup-0.1.0.exe`（68.7 MB）、`SHA256SUMS.txt` 与 `latest.json` 生成 |
 | 安装包内容抽查（`innoextract -l`） | `app\YiukiSleep.exe` 13.2 MiB + `app\_internal\…` 完整 |
+| 把 onedir 复制到 `C:\Temp\ys-final` 后 `YiukiSleep.exe --check-gui` | `{"ok": true, "backend": "winforms", "dotnet": "netfx"}`，退出码 0（证明窗口后端在普通目录可用） |
 | `deploy\accept_local.ps1`（服务端模式全量） | `local acceptance: ALL PASS` |
+
+窗口后端自检（0.1.0 发布后的补充）：`desktop/app.py` 增加 `--check-gui`（只加载 pywebview + pythonnet + .NET，不开窗口，可配 `--report` 落盘），
+`--smoke` 的报告新增 `"cffi": true/false`。原因是 0.1.0 首次发布时漏了 `cffi`：`clr-loader` 当初用 `--no-deps` 安装，
+`clr_loader/ffi/__init__.py` 里 `import cffi` 在打包时被 PyInstaller 忽略，双击窗口直接崩在 .NET 初始化。
+现在 `app.spec` 显式 hiddenimport `cffi` / `_cffi_backend`，`tests\test_desktop_frozen.py` 用打包产物断言 `smoke["cffi"] is True`。
 
 自动化小口子：`desktop/app.py` 正常每次启动随机生成本机令牌；测试或脚本可以用环境变量 `SSP_LOCAL_TOKEN` 固定它
 （打包产物测试就是靠这个带令牌访问 `/api/*`），不设置时行为不变。
+
+已知限制（环境相关，不是产品缺陷）：
+
+- **不要从被 Windows 判为「网络位置」的目录直接运行**：.NET Framework 拒绝从网络区域 `LoadFrom` 托管 DLL，
+  报 `Failed to resolve Python.Runtime.Loader.Initialize`（HRESULT `0x80131515`，`LoadFile` 会提示需要 `loadFromRemoteSources`）。
+  本机 DSH 沙箱把会话工作区（`…\default-workspace\…`）呈现成网络区域，所以从仓库目录双击 onedir 会失败；
+  同一份产物复制到 `C:\Temp\ys-final` 后 `--check-gui` 正常。交付时必须装安装包（`%PROGRAMFILES%\YiukiSleep`），
+  或把整个 `YiukiSleep\` 目录移到 `%LOCALAPPDATA%\Programs\YiukiSleep` 之类的普通目录。
+  程序在这种情况下会弹「could not load the window backend」并附上这条指引，而不是静默退出。
+- 安装包需要在干净虚拟机上手工走一遍安装/升级/卸载（见上一节清单），本机无管理员权限、未做。
 
 已知未做：代码签名（安装包与 exe 均未签名）、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证、
 `latest.json` 与安装包尚未发布到 `yiuki.me/desktop/`（发布动作按约定不在本机执行）。
