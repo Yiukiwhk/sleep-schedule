@@ -110,14 +110,15 @@ def wipe_local_data(user: User = Depends(current_user)) -> dict:
 # only exposes it to the local page (see docs/DESKTOP.md sections 6 and 7).
 # --------------------------------------------------------------------------- #
 class BindIn(BaseModel):
-    server: str = Field(min_length=8, max_length=200)
+    # 留空表示使用官方服务器；自建服务器填自己的地址（见 desktop.sync.normalize_server）。
+    server: str = Field(default="", max_length=200)
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=200)
     mode: str = Field(default="merge", pattern="^(merge|cloud)$")
 
 
 class CreateIn(BaseModel):
-    server: str = Field(min_length=8, max_length=200)
+    server: str = Field(default="", max_length=200)
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=200)
 

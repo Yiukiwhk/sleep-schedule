@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -27,8 +28,28 @@ BACKUP_KEEP = 10
 TIMEOUT = 20.0
 
 
+DEFAULT_SERVER = "https://yiuki.me"
+
+
 class SyncError(Exception):
     """同步失败；message 直接展示给用户（已翻译的短句或服务端原文）。"""
+
+
+def normalize_server(value: str) -> str:
+    """把用户填的服务器地址规整成 https://host[:port][/path]。
+
+    留空时返回官方服务器；没写协议的补 ``https://``；自建服务器可以带子路径
+    （例如挂在 ``https://example.com/sleep`` 下），末尾斜杠统一去掉。
+    """
+    text = (value or "").strip()
+    if not text:
+        return DEFAULT_SERVER
+    if "://" not in text:
+        text = "https://" + text
+    parsed = urllib.parse.urlsplit(text)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise SyncError("服务器地址要以 http:// 或 https:// 开头")
+    return text.rstrip("/")
 
 
 # --------------------------------------------------------------------------- #
@@ -36,7 +57,7 @@ class SyncError(Exception):
 # --------------------------------------------------------------------------- #
 class HttpClient:
     def __init__(self, server: str) -> None:
-        self.server = (server or "").rstrip("/")
+        self.server = normalize_server(server)
         self.jar = CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
 
@@ -131,24 +152,33 @@ def bind(
     create: bool = False,
 ) -> dict[str, Any]:
     """登录（或先建号再登录）远端账号并申请设备令牌。"""
-    client = HttpClient(server)
+    target = normalize_server(server)
+    client = HttpClient(target)
     if create:
         status, body = client.request(
             "POST", "/api/sync/account", {"username": username, "password": password}
         )
+        if status == 404:
+            raise SyncError("服务器上没有同步接口，请确认地址，或先更新服务器")
         if status != 200:
             raise SyncError(body.get("detail") or body.get("message") or "创建云端账号失败")
     status, body = client.request(
         "POST", "/api/auth/login", {"username": username, "password": password, "remember": True}
     )
+    if status == 404:
+        raise SyncError("服务器上没有同步接口，请确认地址，或先更新服务器")
+    if status == 401:
+        raise SyncError(body.get("detail") or "error.invalid_credentials")
     if status != 200:
-        raise SyncError(body.get("detail") or "登录失败")
+        raise SyncError(body.get("detail") or f"登录失败（HTTP {status}）")
     status, body = client.request("POST", "/api/sync/devices", {"name": "desktop"})
+    if status == 404:
+        raise SyncError("服务器版本太旧：没有设备令牌接口，请先更新服务器")
     if status != 200 or not body.get("device_token"):
         raise SyncError(body.get("detail") or "申请设备令牌失败")
     binding = {
         "v": 1,
-        "server": server.rstrip("/"),
+        "server": target,
         "username": username,
         "device_id": body.get("device_id"),
         "token": body["device_token"],
@@ -554,7 +584,7 @@ def run(paths: dict[str, Path], *, make_snapshot: bool = True) -> dict[str, Any]
             problems = body.get("violations") or []
             if problems:
                 first = problems[0]
-                raise SyncError(f"{first.get('code')}: {first.get('message')}")
+                raise SyncError(first.get("message") or first.get("code") or "推送失败")
             raise SyncError(body.get("detail") or "推送失败")
         pushed += len(batch)
         # The push reply cursor is a server-side position that may be ahead of

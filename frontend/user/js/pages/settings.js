@@ -322,7 +322,8 @@ function syncCardHtml(info) {
       <span class="tiny muted">${escapeHtml(t("settings.syncHint"))}</span>
       <div class="field">
         <label>${escapeHtml(t("settings.syncServer"))}</label>
-        <input class="input" id="sync-server" type="url" spellcheck="false" value="https://yiuki.me" />
+        <input class="input" id="sync-server" type="text" spellcheck="false" placeholder="https://yiuki.me" />
+        <span class="tiny muted">${escapeHtml(t("settings.syncServerHint"))}</span>
       </div>
       <div class="field">
         <label>${escapeHtml(t("settings.syncUsername"))}</label>
@@ -392,7 +393,7 @@ async function loadSyncCard(root, ctx) {
 
   qs("#sync-bind", box)?.addEventListener("click", async () => {
     const payload = form();
-    if (!payload.server || !payload.username || !payload.password) {
+    if (!payload.username || !payload.password) {
       fail(new Error(t("error.invalid_input")));
       return;
     }
@@ -409,7 +410,7 @@ async function loadSyncCard(root, ctx) {
 
   qs("#sync-create", box)?.addEventListener("click", async () => {
     const payload = form();
-    if (!payload.server || !payload.username || !payload.password) {
+    if (!payload.username || !payload.password) {
       fail(new Error(t("error.invalid_input")));
       return;
     }

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..config import settings
+from ..core.security import client_ip
 from ..db import get_db, write_session
 from ..deps import current_user
 from ..errors import ApiError
@@ -116,30 +117,45 @@ def _version_tuple(text: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _grace_violation(user: models.User, db: Session) -> list[dict[str, str]]:
+def _grace_violation(
+    user: models.User, db: Session, request: Request | None = None
+) -> list[dict[str, str]]:
     """桌面端新建的云端账号 24 小时内不能同步（DESKTOP.md 第 13 节防滥用）。
 
     只有通过 /api/sync/account 建出来的账号才受限制：建号时写一条
     ``sync_account_created`` 系统日志，这里按日志判断，普通账号不受影响。
+
+    例外：建号后 1 小时内、从同一个 IP 发起同步放行——这是「新建账号后立刻
+    绑定并同步」的正常路径；换个 IP 或超过 1 小时仍按 24 小时宽限期处理。
     """
-    since = _utcnow() - timedelta(hours=ACCOUNT_DAILY_GRACE_HOURS)
+    if ACCOUNT_DAILY_GRACE_HOURS <= 0:
+        return []
+    now = _utcnow()
+    since = now - timedelta(hours=ACCOUNT_DAILY_GRACE_HOURS)
     created = db.execute(
-        select(models.SystemLog.id).where(
+        select(models.SystemLog.ip, models.SystemLog.created_at)
+        .where(
             models.SystemLog.user_id == user.id,
             models.SystemLog.event == "sync_account_created",
             models.SystemLog.created_at >= since,
         )
+        .order_by(models.SystemLog.id.desc())
     ).first()
-    if created is not None:
-        return [
-            {
-                "code": "sync.account_too_new",
-                "table": "",
-                "client_row_id": "",
-                "message": "新账号 24 小时内暂时不能同步",
-            }
-        ]
-    return []
+    if created is None:
+        return []
+    created_ip, created_at = created
+    if request is not None and created_ip and created_at is not None:
+        same_ip = client_ip(request) == created_ip
+        if same_ip and (now - created_at) <= timedelta(hours=1):
+            return []
+    return [
+        {
+            "code": "sync.account_too_new",
+            "table": "",
+            "client_row_id": "",
+            "message": "新账号 24 小时内暂时不能同步",
+        }
+    ]
 
 
 @router.post("/devices", response_model=DeviceCreateOut)
@@ -191,7 +207,7 @@ def sync_status(
 ) -> dict[str, Any]:
     violations = _check_client_headers(request)
     status = sync_engine.status_payload(user)
-    violations.extend(_grace_violation(user, db))
+    violations.extend(_grace_violation(user, db, request))
     return {**status, "violations": violations}
 
 
@@ -202,7 +218,7 @@ def sync_push(
     user: models.User = Depends(device_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    violations = _check_client_headers(request) + _grace_violation(user, db)
+    violations = _check_client_headers(request) + _grace_violation(user, db, request)
     if violations:
         return {"ok": False, "violations": violations, "cursor": payload.cursor}
     rows = [row.model_dump() for row in payload.rows]
@@ -241,7 +257,7 @@ def sync_pull(
     user: models.User = Depends(device_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    violations = _check_client_headers(request) + _grace_violation(user, db)
+    violations = _check_client_headers(request) + _grace_violation(user, db, request)
     if violations:
         return {"ok": False, "violations": violations, "rows": [], "cursor": cursor}
     rows, new_cursor, has_more = sync_engine.pull_rows(db, user, cursor=cursor)
@@ -255,7 +271,7 @@ def create_sync_account(
 ) -> dict[str, Any]:
     if request.headers.get("X-Client", "").strip() != "desktop":
         raise ApiError(403, "error.forbidden", code="error.forbidden")
-    ip = request.client.host if request.client else ""
+    ip = client_ip(request)
     with write_session() as session:
         since = _utcnow() - timedelta(hours=ACCOUNT_RATE_WINDOW_HOURS)
         recent = session.execute(
