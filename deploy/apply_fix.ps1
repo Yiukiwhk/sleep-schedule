@@ -64,23 +64,34 @@ if (-not (Test-Path -LiteralPath (Join-Path $root "frontend\user\index.html"))) 
 }
 
 # Python modules shipped by a release: the adaptive-v2 advice engine, the auth
-# guard (login-failure warning + failure-count reset) and the records cooldown
-# with the config defaults.
+# guard (login-failure warning + failure-count reset), the records cooldown,
+# the app assembly (SSP_MODE + routers + runtime/local guard) and the cloud sync
+# API that desktop builds use.
 # Keep in sync with the rollback list in deploy/remote_apply_fix.sh.
 $backendFiles = @(
+    "app\api\__init__.py",
     "app\api\admin.py",
     "app\api\advice.py",
     "app\api\auth.py",
+    "app\api\desktop_api.py",
     "app\api\records.py",
+    "app\api\runtime_api.py",
+    "app\api\sync_api.py",
     "app\config.py",
+    "app\core\local_guard.py",
     "app\core\timing.py",
     "app\db.py",
+    "app\deps.py",
+    "app\desktop.py",
+    "app\main.py",
     "app\models.py",
     "app\schemas.py",
     "app\services\advice.py",
     "app\services\advice_plan.py",
     "app\services\auth_service.py",
-    "app\services\sessions.py"
+    "app\services\sessions.py",
+    "app\services\sync_engine.py",
+    "app\version.py"
 )
 
 $askpass = Join-Path $env:TEMP "dsh_askpass.bat"

@@ -55,9 +55,11 @@ if [ -d "$STAGE/frontend" ]; then
 fi
 
 # Python modules shipped by a release: the adaptive-v2 advice engine, the auth
-# guard (login-failure warning), the records cooldown and the config defaults.
+# guard (login-failure warning), the records cooldown, the app assembly
+# (SSP_MODE + routers + runtime/local guard) and the cloud sync API that
+# desktop builds call.
 # Must stay in sync with $backendFiles in deploy/apply_fix.ps1.
-BACKEND_FILES="app/api/admin.py app/api/advice.py app/api/auth.py app/api/records.py app/config.py app/core/timing.py app/db.py app/models.py app/schemas.py app/services/advice.py app/services/advice_plan.py app/services/auth_service.py app/services/sessions.py"
+BACKEND_FILES="app/api/__init__.py app/api/admin.py app/api/advice.py app/api/auth.py app/api/desktop_api.py app/api/records.py app/api/runtime_api.py app/api/sync_api.py app/config.py app/core/local_guard.py app/core/timing.py app/db.py app/deps.py app/desktop.py app/main.py app/models.py app/schemas.py app/services/advice.py app/services/advice_plan.py app/services/auth_service.py app/services/sessions.py app/services/sync_engine.py app/version.py"
 
 echo "== 2b. backend code =="
 BACKEND_BACKUP=/tmp/sleep-backend-backup
@@ -205,6 +207,11 @@ check "legacy module path /admin"   "http://127.0.0.1/admin/shared/ui.js"       
 check "api parts"                   "http://127.0.0.1/api/auth/admin/parts"      200 '"parts"'
 check "api me 401"                  "http://127.0.0.1/api/auth/me"               401 'error.not_authenticated'
 check "healthz"                     "http://127.0.0.1/healthz"                   200 'ok'
+# desktop builds bind here: the runtime probe and the sync device gate must be
+# live. /api/sync/account is POST-only, so a GET falls through to the SPA
+# catch-all (404 JSON) - assert the POST gate separately below.
+check "runtime endpoint"            "http://127.0.0.1/api/runtime"               200 '"desktop":false'
+check "sync status needs device"    "http://127.0.0.1/api/sync/status"           401 'error.not_authenticated'
 # legacy /sleep/... addresses stay reachable (302) or proxied
 check "/sleep -> 302"               "http://127.0.0.1/sleep"                     302 ''
 check "/sleep/ -> 302"              "http://127.0.0.1/sleep/"                    302 ''
@@ -291,7 +298,7 @@ grep_file() {  # grep_file <label> <file> <needle>
         fail=$((fail + 1))
     fi
 }
-grep_file "config: 10s cooldown"    "$APP_DIR/backend/app/config.py"                 'WRITE_COOLDOWN_SECONDS", 10'
+grep_file "config: cooldown default"  "$APP_DIR/backend/app/config.py"                 'else 10)'
 grep_file "records: 10s docstring"  "$APP_DIR/backend/app/api/records.py"            '10 秒防重复提交'
 grep_file "auth service: warning"   "$APP_DIR/backend/app/services/auth_service.py"  'def failure_warning'
 grep_file "api auth: warning used"  "$APP_DIR/backend/app/api/auth.py"               'failure_warning('
@@ -657,6 +664,28 @@ grep_fixed "models.py: the column exists on the user" "$APP_DIR/backend/app/mode
 grep_file "advice.js: the toggle renders below the today card" "$WEBROOT/user/js/pages/advice.js" 'data-anchor'
 grep_file "advice.js: toggling persists the setting" "$WEBROOT/user/js/pages/advice.js" 'meal_anchor: on'
 grep_file "i18n.js: both hint texts exist" "$WEBROOT/shared/i18n.js" 'advice.anchor.title'
+
+echo "== 4am. the cloud sync API that desktop builds call is deployed =="
+# 桌面端绑定云端账号时调用 /api/sync/*；缺一个模块就 404，桌面端只会看到"绑定失败"。
+grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.1.0"'
+grep_file "main: desktop routers are conditional" "$APP_DIR/backend/app/main.py" 'include_desktop=settings.DESKTOP'
+grep_file "local guard: token header checked" "$APP_DIR/backend/app/core/local_guard.py" 'X-Local-Token'
+grep_file "sync engine: lww compare" "$APP_DIR/backend/app/services/sync_engine.py" 'def is_newer'
+grep_file "sync engine: tombstones kept" "$APP_DIR/backend/app/services/sync_engine.py" 'TOMBSTONE_DAYS'
+grep_file "sync engine: schema columns migrated" "$APP_DIR/backend/app/db.py" '_migrate_sync_columns'
+grep_file "sync api: device tokens" "$APP_DIR/backend/app/api/sync_api.py" 'X-Device-Token'
+grep_file "sync api: push endpoint" "$APP_DIR/backend/app/api/sync_api.py" 'def sync_push('
+grep_file "sync api: desktop-only account creation" "$APP_DIR/backend/app/api/sync_api.py" '"X-Client"'
+# POST without the desktop header must be refused before anything is created.
+acct_code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' \
+    --data '{"username":"deploy-probe-user","password":"deploy-probe-pass"}' \
+    http://127.0.0.1/api/sync/account || true)
+if [ "$acct_code" = "403" ]; then
+    echo "  ok   sync account rejects non-desktop clients"
+else
+    echo "  FAIL sync account POST -> $acct_code (want 403)"; fail=$((fail + 1))
+fi
 
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"

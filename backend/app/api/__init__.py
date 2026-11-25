@@ -1,6 +1,9 @@
 """API 路由包。
 
 桌面版（SSP_MODE=desktop）不装配管理后台路由：build_api_router(include_admin=False)。
+
+desktop_api 只在桌面模式装配，所以延迟导入：它的文件导入路由需要 python-multipart，
+而服务端的 venv 只装服务端运行依赖（没有 multipart），顶层导入会让服务端起不来。
 """
 from __future__ import annotations
 
@@ -11,7 +14,6 @@ from . import (
     admin,
     advice,
     auth,
-    desktop_api,
     records,
     runtime_api,
     settings_api,
@@ -32,6 +34,8 @@ def build_api_router(*, include_admin: bool = True, include_desktop: bool = Fals
     if include_admin:
         router.include_router(admin.router)
     if include_desktop:
+        from . import desktop_api
+
         router.include_router(desktop_api.router)
     return router
 

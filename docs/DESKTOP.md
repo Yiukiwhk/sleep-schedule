@@ -395,6 +395,11 @@ class ImportResult:
 - `backend/app/api/sync_api.py`（新增）：`POST /api/sync/devices`、`DELETE /api/sync/devices/{id}`、`GET /api/sync/status`、`POST /api/sync/push`、
   `GET /api/sync/pull?cursor=`、`POST /api/sync/account`（仅 `X-Client: desktop`；同 IP 每小时 ≤ `SYNC_ACCOUNT_RATE_LIMIT`；新账号 24h 内不能同步——`SYNC_NEW_ACCOUNT_GRACE_HOURS` 可配）。
 - 推送先整批校验，失败返回 `{ok:false, violations:[…]}` 且一行都不落库；成功返回逐行 `applied` / `stale` 与新游标。
+- 发布：`deploy/apply_fix.ps1` 的 `$backendFiles` 与 `deploy/remote_apply_fix.sh` 的 `BACKEND_FILES` 已包含上表新增模块
+  （`api/__init__.py`、`api/sync_api.py`、`api/runtime_api.py`、`api/desktop_api.py`、`version.py`、`core/local_guard.py`、
+  `app/desktop.py`、`deps.py`、`main.py`、`services/sync_engine.py`）；上线后远端自证新增 4am 段（`/api/runtime` 200、
+  `/api/sync/status` 401、`POST /api/sync/account` 无 `X-Client` 403，以及 sync_engine/db/main 的落地 grep）。
+  注意 `api/__init__.py` 对 `desktop_api` 是延迟导入：服务端 venv 没有 `python-multipart`，顶层导入会让服务端起不来。
 
 桌面客户端：
 
