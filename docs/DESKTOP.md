@@ -483,7 +483,7 @@ class ImportResult:
 |---|---|
 | `pytest tests\test_updater.py`（desktop\.venv） | 5 passed（版本比较、清单解析、非 https/sha 告警、网络失败、缺 version） |
 | `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed / 1 skipped / 7.90s（**打包产物**：无令牌 403、建记录 201、重启后记录仍在、同步接口 200、multipart 导入 parse/commit 200、截图 OCR 返回 `source="ocr"`；第二条 `--smoke` + `--check-gui` 在本仓库路径下按环境限制 skip，见「已知限制」） |
-| `pytest tests\test_desktop_runtime.py`（desktop\.venv） | 5 passed（安装版→ProgramData、便携版→LocalAppData、三个开关胜负关系、`per_user+machine` 抛错、不可写目录探测） |
+| `pytest tests\test_desktop_runtime.py`（desktop\.venv） | 6 passed（安装版→ProgramData、便携版→LocalAppData、三个开关胜负关系、`per_user+machine` 抛错、不可写目录探测、窗口 URL 单斜杠） |
 | 把新 onedir 装到 `%LOCALAPPDATA%\Programs\YiukiSleep` 后**在沙箱外**启动 | `--serve-only`：`db=C:\Users\…\AppData\Local\YiukiSleep\data\app.db`，`/healthz` 200、`/` 200、无令牌 `/api/runtime` 403；`--check-gui`：`{"ok": true, "backend": "winforms", "dotnet": "netfx"}` |
 | `desktop\build\build.ps1`（含 pytest + PyInstaller + Inno） | exit 0：`bundled --smoke ok`、`YiukiSleep-setup-0.1.0.exe`（68.7 MB）、`SHA256SUMS.txt` 与 `latest.json` 生成 |
 | 安装包内容抽查（`innoextract -l`） | `app\YiukiSleep.exe` 13.2 MiB + `app\_internal\…` 完整 |
@@ -494,6 +494,12 @@ class ImportResult:
 `--smoke` 的报告新增 `"cffi": true/false`。原因是 0.1.0 首次发布时漏了 `cffi`：`clr-loader` 当初用 `--no-deps` 安装，
 `clr_loader/ffi/__init__.py` 里 `import cffi` 在打包时被 PyInstaller 忽略，双击窗口直接崩在 .NET 初始化。
 现在 `app.spec` 显式 hiddenimport `cffi` / `_cffi_backend`，`tests\test_desktop_frozen.py` 用打包产物断言 `smoke["cffi"] is True`。
+
+窗口地址缺陷（0.1.0 发布后修复）：窗口 URL 原先用 `f"{build_url(port)}/?t={token}"` 拼接，而 `build_url()` 已经带结尾斜杠，
+实际打开的是 `http://127.0.0.1:<port>//?t=…`——`//` 是另一个路径，被 SPA fallback 当成未知路由，窗口里只显示
+`{"detail":"error.not_found","code":"error.not_found"}`。现在统一走 `runtime.build_window_url(port, token)`
+（单斜杠 + `quote()`），`--smoke` 会把这条 URL 真请求一次并断言 200 且返回 HTML，
+`tests\test_desktop_runtime.py` 里也钉住了 `http://127.0.0.1:<port>/?t=…` 的精确形状。
 
 数据目录缺陷（0.1.0 发布后修复）：便携版原先无条件用 `%PROGRAMDATA%\YiukiSleep`，而该目录由普通用户创建时继承
 `C:\ProgramData` 的 ACL（`BUILTIN\Users` 只有 `ReadAndExecute`），第一次能建出 `app.log`，第二次启动就
