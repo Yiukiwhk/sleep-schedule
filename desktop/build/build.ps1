@@ -30,7 +30,15 @@ $Version = $match.Matches[0].Groups[1].Value
 Write-Host "building YiukiSleep $Version with $Python"
 
 if (-not $SkipTests) {
-    & $Python -m pytest tests\test_advice_engine.py tests\test_desktop_mode.py tests\test_desktop_shell.py -q -p no:cacheprovider
+    # The build venv only needs the runtime deps; the test venv (backend\.venv)
+    # carries pytest + httpx for TestClient. Prefer it, but fall back when a
+    # clean checkout has no backend venv yet.
+    $TestPython = $Python
+    foreach ($candidate in @("backend\.venv\Scripts\python.exe")) {
+        if (Test-Path $candidate) { $TestPython = $candidate; break }
+    }
+    Write-Host "running tests with $TestPython"
+    & $TestPython -m pytest tests\test_advice_engine.py tests\test_desktop_mode.py tests\test_desktop_shell.py -q -p no:cacheprovider
     if ($LASTEXITCODE -ne 0) { throw "pytest failed" }
 }
 
