@@ -51,6 +51,28 @@ def _request(port: int, path: str, *, method: str = "GET", payload: dict | None 
         return exc.code, json.loads(exc.read() or b"{}")
 
 
+def _upload_json(port: int, path: str, filename: str, payload: dict):
+    boundary = "----frozenTestBoundary"
+    body = b"".join(
+        [
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode("utf-8"),
+            b"Content-Type: application/json\r\n\r\n",
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            f"\r\n--{boundary}--\r\n".encode("utf-8"),
+        ]
+    )
+    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=body, method="POST")
+    request.add_header("Accept", "application/json")
+    request.add_header("X-Local-Token", TOKEN)
+    request.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.status, json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b"{}")
+
+
 def _start(work: Path, port: int) -> subprocess.Popen:
     env = {key: value for key, value in os.environ.items() if not key.startswith("SSP_")}
     env.update({"SSP_LOCAL_TOKEN": TOKEN, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
@@ -122,6 +144,26 @@ def test_frozen_app_keeps_data_across_restart() -> None:
         status, sync_state = _request(second_port, "/api/desktop/sync/state")
         assert status == 200, sync_state
         assert sync_state["bound"] is False
+
+        # multipart 上传依赖（python-multipart）也必须打进产物。
+        import_date = (date.today() - timedelta(days=5)).isoformat()
+        status, parsed = _upload_json(
+            second_port,
+            "/api/desktop/import/parse",
+            "probe.json",
+            {"records": [{"date": import_date, "sleep_time": "22:30", "wake_time": "06:40"}]},
+        )
+        assert status == 200, parsed
+        assert parsed["count"] == 1
+        assert parsed["records"][0]["date"] == import_date
+        status, committed = _request(
+            second_port,
+            "/api/desktop/import/commit",
+            method="POST",
+            payload={"rows": parsed["records"]},
+        )
+        assert status == 200, committed
+        assert committed["created"] == [import_date]
     finally:
         _stop(proc)
         shutil.rmtree(work, ignore_errors=True)

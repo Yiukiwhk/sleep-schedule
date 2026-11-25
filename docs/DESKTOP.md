@@ -456,7 +456,7 @@ class ImportResult:
 | 项 | 结果 |
 |---|---|
 | `pytest tests\test_updater.py`（desktop\.venv） | 5 passed（版本比较、清单解析、非 https/sha 告警、网络失败、缺 version） |
-| `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed（**打包产物**：无令牌 403、建记录 201、关进程重启同数据目录后记录仍在、同步接口 200） |
+| `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed（**打包产物**：无令牌 403、建记录 201、关进程重启同数据目录后记录仍在、同步接口 200、multipart 导入 parse/commit 200） |
 | `desktop\build\build.ps1 -SkipTests` | exit 0：bundle `--smoke` ok、`SHA256SUMS.txt` 与 `latest.json` 生成 |
 | `deploy\accept_local.ps1`（服务端模式全量） | `local acceptance: ALL PASS` |
 
