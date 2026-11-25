@@ -188,6 +188,9 @@ def run_smoke(report_path: str | None = None) -> int:
         report["create"] = {"status": status, "id": created.get("id")}
         status, admin = runtime.request_json(f"{base}/admin/", token=token)
         report["admin_page"] = {"status": status}
+        # The window URL must be the app page, not a 404 from the SPA fallback.
+        status, page = runtime.request_json(runtime.build_window_url(port, token))
+        report["window_page"] = {"status": status, "html": "raw" in page}
         # The backend imports desktop.sync lazily; a 503 here means the desktop
         # package did not make it into the bundle.
         status, sync_state = runtime.request_json(f"{base}/api/desktop/sync/state", token=token)
@@ -202,6 +205,8 @@ def run_smoke(report_path: str | None = None) -> int:
             and report["no_token"].get("status") == 403
             and report["create"].get("status") == 201
             and report["admin_page"].get("status") == 404
+            and report["window_page"].get("status") == 200
+            and report["window_page"].get("html") is True
             and report["sync_state"].get("status") == 200
             and report["sync_state"].get("bound") is False
         )
@@ -304,7 +309,7 @@ def run_window(paths: dict[str, Path], config: dict, *, port: int, token: str) -
         _show_error(f"could not start the local service:\n{exc}{hint}")
         return 1
 
-    url = f"{runtime.build_url(port)}/?t={token}"
+    url = runtime.build_window_url(port, token)
     width, height = _window_geometry(config)
     window = webview.create_window(APP_TITLE, url, width=width, height=height, min_size=(900, 640))
 

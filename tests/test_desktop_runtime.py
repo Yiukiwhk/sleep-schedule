@@ -83,3 +83,11 @@ def test_probe_writable_detects_an_unwritable_folder(tmp_path: Path) -> None:
     file_as_dir = tmp_path / "file-not-dir"
     file_as_dir.write_text("x", encoding="ascii")
     assert runtime.probe_writable(file_as_dir) is not None
+
+
+def test_window_url_has_a_single_slash_before_the_token() -> None:
+    """0.1.0 opened `//?t=...`, which the SPA fallback answers with a 404 JSON page."""
+    url = runtime.build_window_url(51234, "abc-DEF_123")
+    assert url == "http://127.0.0.1:51234/?t=abc-DEF_123"
+    assert "//?" not in url
+    assert runtime.build_url(51234) == "http://127.0.0.1:51234/"

@@ -13,6 +13,7 @@ import socket
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -180,6 +181,16 @@ def new_token() -> str:
 
 def build_url(port: int, path: str = "/") -> str:
     return f"http://127.0.0.1:{int(port)}{path}"
+
+
+def build_window_url(port: int, token: str) -> str:
+    """URL the webview opens: exactly one slash before the query.
+
+    `http://127.0.0.1:<port>//?t=...` is a different path ("//"), which the SPA
+    fallback answers with a 404 JSON document - that is why 0.1.0 opened a window
+    showing {"detail": "error.not_found"} instead of the app.
+    """
+    return f"{build_url(port, '/')}?t={urllib.parse.quote(token, safe='')}"
 
 
 # --------------------------------------------------------------------------- #
