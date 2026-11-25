@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
@@ -23,6 +24,29 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 EXE = ROOT / "dist" / "desktop" / "YiukiSleep" / "YiukiSleep.exe"
 TOKEN = "frozen-test-token"
+
+
+def _sample_screenshot() -> bytes | None:
+    """Build a fake sleep-app screenshot for the OCR path (needs Pillow)."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:  # pragma: no cover - only on a stripped-down venv
+        return None
+    image = Image.new("RGB", (1440, 840), "white")
+    draw = ImageDraw.Draw(image)
+    try:
+        font = ImageFont.truetype("arial.ttf", 64)
+    except OSError:  # pragma: no cover - font missing
+        font = ImageFont.load_default()
+    draw.text((80, 80), "2026-11-20", fill=(20, 20, 20), font=font)
+    draw.text((120, 360), "23:10", fill=(20, 20, 20), font=font)
+    draw.text((840, 360), "07:05", fill=(20, 20, 20), font=font)
+    for index, color in enumerate([(120, 40, 160), (40, 120, 200), (80, 180, 120)]):
+        top = 600 + index * 60
+        draw.rectangle([120, top, 120 + (index + 2) * 180, top + 36], fill=color)
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
 
 pytestmark = [
     pytest.mark.desktop,
@@ -51,14 +75,14 @@ def _request(port: int, path: str, *, method: str = "GET", payload: dict | None 
         return exc.code, json.loads(exc.read() or b"{}")
 
 
-def _upload_json(port: int, path: str, filename: str, payload: dict):
+def _upload(port: int, path: str, filename: str, data: bytes, content_type: str):
     boundary = "----frozenTestBoundary"
     body = b"".join(
         [
             f"--{boundary}\r\n".encode("utf-8"),
             f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode("utf-8"),
-            b"Content-Type: application/json\r\n\r\n",
-            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+            data,
             f"\r\n--{boundary}--\r\n".encode("utf-8"),
         ]
     )
@@ -67,10 +91,14 @@ def _upload_json(port: int, path: str, filename: str, payload: dict):
     request.add_header("X-Local-Token", TOKEN)
     request.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=60) as response:
             return response.status, json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read() or b"{}")
+
+
+def _upload_json(port: int, path: str, filename: str, payload: dict):
+    return _upload(port, path, filename, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json")
 
 
 def _start(work: Path, port: int) -> subprocess.Popen:
@@ -164,6 +192,16 @@ def test_frozen_app_keeps_data_across_restart() -> None:
         )
         assert status == 200, committed
         assert committed["created"] == [import_date]
+
+        # OCR 是可选组件：装进了产物就顺带验一张截图，没装则跳过。
+        screenshot = _sample_screenshot() if parsed.get("ocr_available") else None
+        if screenshot:
+            status, ocr_result = _upload(
+                second_port, "/api/desktop/import/parse", "shot.png", screenshot, "image/png"
+            )
+            assert status == 200, ocr_result
+            assert ocr_result["count"] >= 1
+            assert ocr_result["records"][0]["source"] == "ocr"
     finally:
         _stop(proc)
         shutil.rmtree(work, ignore_errors=True)

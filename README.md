@@ -116,7 +116,9 @@ desktop\.venv\Scripts\python.exe desktop\app.py --smoke
 # 打包产物端到端检查（先 build，再验证重启后数据还在）
 desktop\.venv\Scripts\python.exe -m pytest tests\test_desktop_frozen.py -q
 
-# 打安装包（PyInstaller onedir + 可选 Inno Setup + SHA256SUMS + latest.json）
+# 打安装包（PyInstaller onedir → Inno Setup → SHA256SUMS.txt + latest.json）
+# 产物：dist\desktop\YiukiSleep\（43 MB 无 OCR / 207 MB 含 OCR）、
+#       dist\desktop\YiukiSleep-setup-0.1.0.exe（19.6 MB / 68.4 MB）、latest.json
 desktop\build\build.ps1
 ```
 
@@ -124,9 +126,11 @@ desktop\build\build.ps1
 
 - 没有登录页、没有管理后台、没有注册：首次启动自动建本机用户「本机」，数据全部留在本机。
 - 写入冷却为 0、不按 6 个月删数据；设置页把「注销账号 / 修改密码」换成「导出 JSON 备份 / 清空本机数据」。
-- 设置页可绑定云端账号做双向同步（LWW 合并、墓碑不复活、同步前自动导出 JSON 快照），也可导入 JSON / CSV / PDF；
-  截图 OCR 是可选依赖（`desktop\requirements-ocr.txt`），没装时界面会提示。
+- 设置页可绑定云端账号做双向同步（LWW 合并、墓碑不复活、同步前自动导出 JSON 快照），也可导入 JSON / CSV / PDF / 截图。
+  安装包默认带 OCR（`desktop\requirements-ocr.txt`）；构建机上没装这套依赖时 `app.spec` 会自动产出无 OCR 的小包，
+  运行时 `parse` 响应的 `ocr_available` 为 `false`，界面提示截图导入需要 OCR 版。
 - 只检查更新、不自动下载：建议直接跑 `user` 端即可，桌面版定位是「本机优先」。
+- 没有管理员权限装 Inno Setup 时，把官方安装包用 `innoextract` 解到 `desktop\build\innosetup\`，`build.ps1` 会优先用它编译安装包。
 
 设计、协议与验收清单见 [docs/DESKTOP.md](docs/DESKTOP.md)。
 

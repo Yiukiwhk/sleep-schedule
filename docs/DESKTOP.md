@@ -248,10 +248,13 @@ class ImportResult:
 
 - PyInstaller `--onedir`（启动快、杀软误报少），产物 `dist/YiukiSleep/`：`YiukiSleep.exe` + `_internal/`。
 - Inno Setup 生成 `YiukiSleep-setup-x.y.z.exe`；安装到 `%ProgramFiles%\YiukiSleep`，数据在 `%PROGRAMDATA%\YiukiSleep`。
-- 依赖拆分：`requirements-desktop.txt` 只加 `pywebview`、`opencv-python-headless`、`rapidocr-onnxruntime`、`pypdf`；
-  **不引入 PyTorch**（体积 1.5 GB 起）。
-- 体积目标：无 OCR ≈ 55–70 MB；含 OCR/OpenCV ≈ 150–190 MB。
+- 依赖拆分：`requirements-desktop.txt` = 运行时依赖 + `pywebview` + `pypdf`，并 `-r requirements-ocr.txt`
+  （`opencv-python-headless`、`numpy`、`onnxruntime`、`rapidocr-onnxruntime` + 其 yaml/shapely/pyclipper/six 依赖）；
+  **不引入 PyTorch**（体积 1.5 GB 起）。删掉那一行 `-r` 即可构建无 OCR 的小包。
+- 实测体积（0.1.0）：无 OCR onedir 43.1 MB / 安装包 19.6 MB；含 OCR onedir 207.0 MB / 安装包 68.4 MB
+  （`cv2.pyd` 67.5 MB、`onnxruntime` 33 MB、模型 15.5 MB；已剔掉用不到的 `opencv_videoio_ffmpeg` 27 MB）。
 - 构建脚本 `desktop/build/build.ps1`：清目录 → `pytest` → PyInstaller → Inno → 计算 sha256 → 输出到 `dist/desktop/`。
+  `app.spec` 用 `importlib.util.find_spec("rapidocr_onnxruntime")` 决定是否把 OCR 打进包，所以两种构建共用一份 spec。
 
 ## 11. 测试策略
 
@@ -406,8 +409,9 @@ class ImportResult:
 - `desktop/importers/files.py`（新增）：`.json`（本应用导出格式、`records/data/items/rows` 包装、设备格式 `date/sleepTime/wakeTime`）、
   `.csv`（表头别名含中文，`deep/light/rem` 分期列）、`.pdf`（pypdf 文本层，抽不到文本时返回 `import.needs_screenshot`）。
   重复日期去重、坏行跳过并附 warning；编码按 `utf-8-sig` → `gb18030` 回退。
-- `desktop/importers/ocr.py`（新增，可选依赖）：RapidOCR + opencv，只在装了 `desktop/requirements-ocr.txt` 时可用；
-  未安装时接口返回 `import.ocr_unavailable`，界面上给同一句提示。**本轮未安装 OCR 依赖，也未打进安装包**（见 §12 P3 验收口径：截图 OCR 需另装可选依赖）。
+- `desktop/importers/ocr.py`（新增，可选依赖）：RapidOCR + opencv，依赖见 `desktop/requirements-ocr.txt`；
+  0.1.0 的安装包**已包含**这套依赖，`parse` 响应里的 `ocr_available` 为 `true`；构建机上没有这些包时会自动产出无 OCR 的小包，
+  此时接口返回 `import.ocr_unavailable`。只做「缩放 720 宽 → 找日期/时间行 → 配对」，不做版面检测，识别结果一律进确认页。
 - `backend/app/api/desktop_api.py`：`POST /api/desktop/import/parse`（multipart，≤10 MiB）、`POST /api/desktop/import/commit`
   （逐行复用记录校验：日期范围、起床日期、三餐日期、时间重叠；重复日期记 `import.already_exists`，其余错误进 `violations`，整批不因单行失败而回滚）。
 - `frontend/user/js/pages/settings.js`：「导入记录」卡——选文件 → 解析预览（逐行日期/入睡/起床/备注可改、显示置信度、低置信度默认不勾）→ 只提交勾选行。
@@ -424,16 +428,26 @@ class ImportResult:
 
 | 项 | 结果 |
 |---|---|
-| `pytest tests\test_importers.py`（desktop\.venv） | 8 passed（导出格式、设备格式、CSV 分期、中文表头+BOM、坏行、PDF 无文本层、OCR 缺依赖） |
+| `pytest tests\test_importers.py`（desktop\.venv） | 8 passed + 1 skipped（导出格式、设备格式、CSV 分期、中文表头+BOM、坏行、PDF 无文本层、**合成截图 OCR 识别**；缺依赖降级用例在有依赖时按设计跳过） |
 | `pytest tests\test_desktop_mode.py` | 2 passed（含导入 parse/commit、导出、清空、离线绑定 409） |
 | 真实 UI 手工点一遍 | 桌面模式下设置页出现「本机数据 / 云同步 / 导入记录」三张卡；服务端模式退回密码卡+危险区 |
 
 ### P4 发布与更新 —— 已完成（2026-11-25）
 
 - `desktop/build/installer.iss`（新增，Inno Setup 6）：装到 `{autopf}\YiukiSleep`，`PrivilegesRequired=admin`，
-  卸载只删程序目录，**`%PROGRAMDATA%\YiukiSleep` 明确保留**。没有 ISCC 时 `build.ps1` 自动跳过，只产出 onedir + zip 前的目录。
+  卸载只删程序目录，**`%PROGRAMDATA%\YiukiSleep` 明确保留**。没有 ISCC 时 `build.ps1` 自动跳过，只产出 onedir。
+  `ArchitecturesAllowed` 兼容 6.3 之前：`#if Ver >= 0x06030000` 用 `x64compatible`，否则退回 `x64`。
+- ISCC 查找顺序：`-Iscc` 参数 → `desktop\build\innosetup\ISCC.exe`（**本机用的便携方式**）→ 三个标准安装目录。
+  没有管理员权限安装 Inno Setup 时，可以用 `innoextract` 把官方安装包解到 `desktop\build\innosetup\`（该目录已 gitignore）：
+
+  ```powershell
+  # 一次性准备（不需要管理员）
+  innoextract -d desktop\build\innosetup -e innosetup-6.0.5.exe
+  ```
+
 - `desktop/build/build.ps1`：pytest（可 `-SkipTests`）→ PyInstaller（`desktop/build/app.spec`）→ 跑 `dist\desktop\YiukiSleep\YiukiSleep.exe --smoke --report` →
-  `SHA256SUMS.txt` → `dist\desktop\latest.json`（`version` / `min_supported` / `notes` / `url` / `sha256` / `size`）。
+  `SHA256SUMS.txt` → Inno 编译安装包 → `dist\desktop\latest.json`（`version` / `min_supported` / `notes` / `url` / `sha256` / `size`）。
+  `latest.json` 优先指向 `YiukiSleep-setup-*.exe`；没有安装包时退回 `YiukiSleep.exe`。
   pytest 阶段优先用 `backend\.venv`（带 pytest + httpx），没有该 venv 时才退回构建 venv，所以构建 venv 只需运行时依赖。
 - `backend/app/version.py` 的 `VERSION` 是版本唯一来源；`desktop/__init__.py` 与上一行保持一致，`build.ps1` 从后者读版本号。
 - `desktop/updater.py`（新增）：读 `https://yiuki.me/desktop/latest.json`，`parse_version` / `is_newer` / `check()`；
@@ -457,11 +471,13 @@ class ImportResult:
 | 项 | 结果 |
 |---|---|
 | `pytest tests\test_updater.py`（desktop\.venv） | 5 passed（版本比较、清单解析、非 https/sha 告警、网络失败、缺 version） |
-| `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed（**打包产物**：无令牌 403、建记录 201、关进程重启同数据目录后记录仍在、同步接口 200、multipart 导入 parse/commit 200） |
-| `desktop\build\build.ps1 -SkipTests` | exit 0：bundle `--smoke` ok、`SHA256SUMS.txt` 与 `latest.json` 生成 |
+| `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed / 5.41s（**打包产物**：无令牌 403、建记录 201、重启后记录仍在、同步接口 200、multipart 导入 parse/commit 200、截图 OCR 返回 `source="ocr"`） |
+| `desktop\build\build.ps1`（含 pytest + PyInstaller + Inno） | exit 0：`bundled --smoke ok`、`YiukiSleep-setup-0.1.0.exe`（68.4 MB）、`SHA256SUMS.txt` 与 `latest.json` 生成 |
+| 安装包内容抽查（`innoextract -l`） | `app\YiukiSleep.exe` 13.2 MiB + `app\_internal\…` 完整 |
 | `deploy\accept_local.ps1`（服务端模式全量） | `local acceptance: ALL PASS` |
 
 自动化小口子：`desktop/app.py` 正常每次启动随机生成本机令牌；测试或脚本可以用环境变量 `SSP_LOCAL_TOKEN` 固定它
 （打包产物测试就是靠这个带令牌访问 `/api/*`），不设置时行为不变。
 
-已知未做：代码签名、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证、OCR 依赖未进安装包。
+已知未做：代码签名（安装包与 exe 均未签名）、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证、
+`latest.json` 与安装包尚未发布到 `yiuki.me/desktop/`（发布动作按约定不在本机执行）。

@@ -1,7 +1,8 @@
-"""导入器的单元测试：只覆盖文件解析（OCR 依赖不一定装，单独断言降级行为）。"""
+"""导入器的单元测试：文件解析 + OCR（依赖装了就跑真识别，没装则断言降级行为）。"""
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 from pathlib import Path
@@ -105,7 +106,35 @@ def test_pdf_without_text_layer_asks_for_screenshot() -> None:
 
 def test_ocr_degrades_cleanly_when_dependencies_are_missing() -> None:
     if importers.ocr_available():
-        pytest.skip("OCR dependencies installed; covered by the manual checklist")
+        pytest.skip("OCR dependencies installed; the next test covers the enabled path")
     with pytest.raises(ImportFailure) as info:
         _parse(b"\x89PNG\r\n\x1a\nbroken", "screenshot.png")
     assert info.value.code == "import.ocr_unavailable"
+
+
+def _sample_screenshot() -> bytes:
+    Image = pytest.importorskip("PIL.Image")
+    ImageDraw = pytest.importorskip("PIL.ImageDraw")
+    ImageFont = pytest.importorskip("PIL.ImageFont")
+    image = Image.new("RGB", (1440, 840), "white")
+    draw = ImageDraw.Draw(image)
+    try:
+        font = ImageFont.truetype("arial.ttf", 64)
+    except OSError:  # pragma: no cover - font missing
+        font = ImageFont.load_default()
+    draw.text((80, 80), "2026-11-20", fill=(20, 20, 20), font=font)
+    draw.text((120, 360), "23:10", fill=(20, 20, 20), font=font)
+    draw.text((840, 360), "07:05", fill=(20, 20, 20), font=font)
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_ocr_reads_a_screenshot_when_dependencies_are_installed() -> None:
+    if not importers.ocr_available():
+        pytest.skip("OCR dependencies not installed")
+    result = _parse(_sample_screenshot(), "screenshot.png")
+    assert result.records
+    assert result.records[0].source == "ocr"
+    assert result.records[0].date == "2026-11-20"
+    assert "import.ocrReview" in result.warnings
