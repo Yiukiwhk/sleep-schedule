@@ -1,9 +1,15 @@
-# Optional OCR extras for screenshot import (docs/DESKTOP.md section 8.2).
-# Install into desktop/.venv with:
+# OCR extras for screenshot import (docs/DESKTOP.md section 8.2), included by
+# requirements-desktop.txt so the shipped installer can read screenshots.
+# Install on its own with:
 #   pip install --no-cache-dir -r desktop/requirements-ocr.txt
-# Without these the app still imports JSON/CSV/PDF and tells the user that
-# screenshot import needs the OCR build.
+# rapidocr also needs pyyaml, shapely, pyclipper and six (pip pulls them in when
+# the resolver is allowed to work; they are listed here so --no-deps installs
+# still work).
 opencv-python-headless==4.12.0.88
 numpy==2.3.4
 onnxruntime==1.23.2
 rapidocr-onnxruntime==1.4.4
+pyyaml>=6.0
+shapely>=2.0
+pyclipper>=1.3
+six>=1.16

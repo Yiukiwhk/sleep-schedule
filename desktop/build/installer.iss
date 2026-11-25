@@ -28,8 +28,14 @@ OutputBaseFilename=YiukiSleep-setup-{#MyVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; "x64compatible" needs Inno Setup 6.3+; older compilers only know "x64".
+#if Ver >= 0x06030000
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+#else
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
+#endif
 UninstallDisplayIcon={app}\{#MyAppExeName}
 CloseApplications=yes
 RestartApplications=no

@@ -6,9 +6,24 @@ The bundle contains the shell (desktop/app.py), the backend package (backend/app
 and the static frontend (frontend/); user data never lives in the bundle.
 """
 
+import importlib.util
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files
+
 ROOT = Path(SPECPATH).resolve().parent.parent  # desktop/build -> repo root
+
+
+def _installed(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+# Screenshot import is optional: when the OCR stack is installed in the build
+# venv it ships inside the bundle, otherwise the UI reports import.ocr_unavailable.
+OCR = _installed("rapidocr_onnxruntime")
 
 hidden = [
     "app.main",
@@ -37,20 +52,42 @@ hidden = [
     "webview.platforms.winforms",
 ]
 
+datas = [(str(ROOT / "frontend"), "frontend")]
+
+if OCR:
+    hidden += [
+        "cv2",
+        "numpy",
+        "onnxruntime",
+        "onnxruntime.capi._pybind_state",
+        "rapidocr_onnxruntime",
+        "yaml",
+        "shapely",
+        "pyclipper",
+        "six",
+    ]
+    # rapidocr ships its ONNX models and config yaml as package data.
+    datas += collect_data_files("rapidocr_onnxruntime")
+
 a = Analysis(
     [str(ROOT / "desktop" / "app.py")],
     pathex=[str(ROOT), str(ROOT / "backend"), str(ROOT / "desktop")],
     binaries=[],
-    datas=[(str(ROOT / "frontend"), "frontend")],
+    datas=datas,
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "numpy", "cv2", "rapidocr_onnxruntime"],
+    excludes=["tkinter", "matplotlib"],
     noarchive=False,
     optimize=0,
 )
 pyz = PYZ(a.pure)
+
+if OCR:
+    # We only decode still images, never video: the bundled FFmpeg backend is
+    # 27 MB of dead weight in the installer.
+    a.binaries = [item for item in a.binaries if "opencv_videoio_ffmpeg" not in item[0].lower()]
 
 exe = EXE(
     pyz,

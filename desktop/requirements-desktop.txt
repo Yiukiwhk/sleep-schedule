@@ -1,9 +1,12 @@
 # Desktop shell dependencies (installed into desktop/.venv, see docs/DESKTOP.md).
 # The web server itself runs from backend/requirements.txt; this file only adds
-# what the native shell needs. OCR is an optional extra: see requirements-ocr.txt.
+# what the native shell needs. The OCR stack is included on purpose: the shipped
+# installer supports screenshot import. On a machine that cannot install it,
+# comment the next line out and the build produces a smaller bundle without OCR.
 -r ../requirements.txt
 pywebview==6.2.1
 pythonnet==3.2.1
 pyinstaller==6.22.3
 # PDF text-layer import (pure Python, ~1 MB).
 pypdf==6.4.0
+-r requirements-ocr.txt

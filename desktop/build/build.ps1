@@ -59,6 +59,7 @@ Write-Host "bundled --smoke ok"
 
 if ($Iscc -eq "") {
     foreach ($candidate in @(
+        "desktop\build\innosetup\ISCC.exe",
         "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
         "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
         "C:\Program Files\Inno Setup 6\ISCC.exe"
