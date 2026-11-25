@@ -133,9 +133,14 @@ desktop\build\build.ps1
 - 没有登录页、没有管理后台、没有注册：首次启动自动建本机用户「本机」，数据全部留在本机。
 - 写入冷却为 0、不按 6 个月删数据；设置页把「注销账号 / 修改密码」换成「导出 JSON 备份 / 清空本机数据」。
 - 设置页可绑定云端账号做双向同步（LWW 合并、墓碑不复活、同步前自动导出 JSON 快照），也可导入 JSON / CSV / PDF / 截图。
+  「服务器地址」**留空就用官方 `https://yiuki.me`**；自建服务器可以填自己的地址（允许 `http://` 内网地址、端口与子路径，
+  例如 `https://example.com/sleep`），同步协议见 `docs/DESKTOP.md` 第 7 节。绑定失败时同步卡会把原因写在红字里
+  （密码错误 / 服务器没有同步接口 / 服务器版本太旧 / 新账号 24 小时内不能同步 等）。
   安装包默认带 OCR（`desktop\requirements-ocr.txt`）；构建机上没装这套依赖时 `app.spec` 会自动产出无 OCR 的小包，
   运行时 `parse` 响应的 `ocr_available` 为 `false`，界面提示截图导入需要 OCR 版。
-- 只检查更新、不自动下载：建议直接跑 `user` 端即可，桌面版定位是「本机优先」。
+- 只检查更新、不自动下载：建议直接跑 `user` 端即可，桌面版定位是「本机优先」。清单在
+  `https://yiuki.me/desktop/latest.json`，用 `deploy\publish_desktop.ps1` 发布安装包与清单。
+
 - 没有管理员权限装 Inno Setup 时，把官方安装包用 `innoextract` 解到 `desktop\build\innosetup\`，`build.ps1` 会优先用它编译安装包。
 - 别从「网络位置」目录直接双击：.NET Framework 拒绝从网络区域加载托管 DLL（报 `Failed to resolve Python.Runtime.Loader.Initialize`）。
   装到 `%PROGRAMFILES%\YiukiSleep`，或把整个 `YiukiSleep\` 目录移到 `%LOCALAPPDATA%\Programs\YiukiSleep` 再运行；

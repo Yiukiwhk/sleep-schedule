@@ -687,6 +687,27 @@ else
     echo "  FAIL sync account POST -> $acct_code (want 403)"; fail=$((fail + 1))
 fi
 
+echo "== 4an. the desktop release path serves files instead of the app shell =="
+# /desktop/latest.json 是更新检查的清单。这里只验证 vhost 有这条 location、而且
+# 缺失文件回 404 —— 文件本身由 deploy/publish_desktop.ps1 单独上传。
+if grep -q 'location \^~ /desktop/' "$VHOST"; then
+    echo "  ok   vhost: /desktop/ is its own location"
+else
+    echo "  FAIL vhost: /desktop/ location missing"; fail=$((fail + 1))
+fi
+desk_code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
+    http://127.0.0.1/desktop/__missing__.json || true)
+if [ "$desk_code" = "404" ]; then
+    echo "  ok   /desktop/ missing file -> 404 (not the SPA)"
+else
+    echo "  FAIL /desktop/__missing__.json -> $desk_code (want 404)"; fail=$((fail + 1))
+fi
+if [ -f "$WEBROOT/desktop/latest.json" ]; then
+    echo "  ok   latest.json published"
+else
+    echo "  note latest.json not published yet (deploy/publish_desktop.ps1)"
+fi
+
 if [ "$fail" -eq 0 ]; then
     echo "fix applied: OK"
 else

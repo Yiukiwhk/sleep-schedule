@@ -394,6 +394,12 @@ class ImportResult:
   设备令牌生成/哈希、`status_payload`。
 - `backend/app/api/sync_api.py`（新增）：`POST /api/sync/devices`、`DELETE /api/sync/devices/{id}`、`GET /api/sync/status`、`POST /api/sync/push`、
   `GET /api/sync/pull?cursor=`、`POST /api/sync/account`（仅 `X-Client: desktop`；同 IP 每小时 ≤ `SYNC_ACCOUNT_RATE_LIMIT`；新账号 24h 内不能同步——`SYNC_NEW_ACCOUNT_GRACE_HOURS` 可配）。
+  **例外**：建号后 1 小时内、从**建号时的同一个 IP** 发起的同步直接放行——这是「新建账号后立刻绑定并同步」的正常路径；
+  换 IP 或超过 1 小时仍按 24h 宽限处理（`_grace_violation(user, db, request)` 比对 `SystemLog.ip`）。
+- 服务器地址（桌面端）：输入框**留空**表示官方 `https://yiuki.me`；自建服务器填自己的地址，允许 `http://`（内网）、端口和子路径
+  （例如 `https://example.com/sleep`）。`desktop/sync.py` 的 `normalize_server()` 负责补 `https://`、去尾部斜杠、拒绝非 http(s) 协议；
+  绑定阶段区分「登录 401」「服务器上没有同步接口」「服务器版本太旧没有设备令牌接口」，错误直接显示在设置页的同步卡上。
+
 - 推送先整批校验，失败返回 `{ok:false, violations:[…]}` 且一行都不落库；成功返回逐行 `applied` / `stale` 与新游标。
 - 发布：`deploy/apply_fix.ps1` 的 `$backendFiles` 与 `deploy/remote_apply_fix.sh` 的 `BACKEND_FILES` 已包含上表新增模块
   （`api/__init__.py`、`api/sync_api.py`、`api/runtime_api.py`、`api/desktop_api.py`、`version.py`、`core/local_guard.py`、
@@ -470,6 +476,10 @@ class ImportResult:
   网络或格式失败只返回 `error` 不抛异常；非 https 下载地址与非法 sha256 进 `warnings`。
 - `GET /api/desktop/update`（仅桌面模式）：返回 `{ok, current, latest, notes, url, sha256, size, min_supported, update_available, error, warnings}`。
 - 设置页只在发现新版本时显示一行「发现新版本 x.y.z，可前往下载」的链接，**不自动下载、不静默替换**。
+- 发布：`deploy/publish_desktop.ps1` 把 `dist\desktop\YiukiSleep-setup-*.exe` 与 `latest.json` 传到
+  `/var/www/sleep-schedule/desktop/`（`chown www-data`、644），随后用公网 URL 复核清单与安装包都是 200；
+  `-VerifyOnly` 只查不发。vhost 新增 `location ^~ /desktop/`（`try_files $uri =404`，缺文件必须 404，
+  否则更新检查会拿到 SPA 首页 HTML 当成「清单格式错误」），远端自证新增 4an 段验证该 location 与 404 行为。
 - `docs/DESKTOP.md` 的安装/升级/卸载手工清单见下；`README.md` 增加桌面版章节。
 
 手工清单（未在干净虚拟机上执行，按顺序即可复现）：
@@ -533,5 +543,6 @@ class ImportResult:
   连 `%LOCALAPPDATA%\YiukiSleep` 的 `mkdir`/写文件都会被拒（WinError 5），程序会弹「could not prepare the data folder」。
   双击桌面快捷方式、开始菜单或资源管理器启动不受影响（本机已用 WMI 在沙箱外启动同一份产物验证通过）。
 
-已知未做：代码签名（安装包与 exe 均未签名）、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证、
-`latest.json` 与安装包尚未发布到 `yiuki.me/desktop/`（发布动作按约定不在本机执行）。
+已知未做：代码签名（安装包与 exe 均未签名）、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证。
+`latest.json` 与安装包由 `deploy/publish_desktop.ps1` 发布到 `https://yiuki.me/desktop/`（vhost 的 `/desktop/` location 已上线，
+缺失文件回 404 而不是 SPA 首页）。
