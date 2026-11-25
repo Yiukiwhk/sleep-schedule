@@ -9,6 +9,7 @@ from ..db import get_db, run_with_retry, write_session
 from ..deps import RequestContext, client_meta, current_user
 from ..errors import ApiError
 from ..models import User
+from ..services import sync_engine
 from ..schemas import (
     PreferenceUpdate,
     TargetScheduleUpdate,
@@ -27,6 +28,7 @@ def _apply_updates(user_id: int, values: dict) -> None:
             for key, value in values.items():
                 setattr(fresh, key, value)
             session.flush()
+            sync_engine.touch_settings(session, fresh)
 
     run_with_retry(_update, label="update_profile")
 

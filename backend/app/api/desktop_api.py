@@ -56,7 +56,7 @@ def export_local_data(
     records = (
         db.execute(
             select(SleepRecord)
-            .where(SleepRecord.user_id == user.id)
+            .where(SleepRecord.user_id == user.id, SleepRecord.deleted_at.is_(None))
             .order_by(SleepRecord.record_date.asc(), SleepRecord.id.asc())
         )
         .scalars()
@@ -65,7 +65,7 @@ def export_local_data(
     checks = (
         db.execute(
             select(MealCheck)
-            .where(MealCheck.user_id == user.id)
+            .where(MealCheck.user_id == user.id, MealCheck.deleted_at.is_(None))
             .order_by(MealCheck.check_date.asc(), MealCheck.meal.asc())
         )
         .scalars()

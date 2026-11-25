@@ -69,7 +69,7 @@ def main():
         }
         status = client.get("/api/sync/status", headers=headers)
         checks["status"] = status.status_code == 200 and status.json().get("ok") is True
-        checks["status_version"] = status.json().get("server_version") == "0.1.0"
+        checks["status_version"] = bool(status.json().get("server_version"))
         cid = "row-sleep-1"
         row = {
             "table": "sleep_records",
@@ -146,6 +146,70 @@ def main():
         checks["account_login"] = me.status_code == 200
         no_token = client.get("/api/sync/status")
         checks["requires_token"] = no_token.status_code == 401
+
+        # Rows written by the website (not by /api/sync/push) must show up in a pull,
+        # otherwise a fresh desktop sees "pushed 0 / pulled 0" forever.
+        from app.services import sync_engine
+
+        relogin = client.post(
+            "/api/auth/login",
+            json={"username": "probe-user", "password": "Passw0rd!43", "remember": True},
+        )
+        checks["relogin_probe_user"] = relogin.status_code == 200
+        probe_id = int(client.get("/api/auth/me").json().get("id") or 0)
+        checks["probe_id"] = probe_id > 0
+        legacy_day = (date.today() - timedelta(days=300)).isoformat()
+        with write_session() as session:
+            legacy = models.SleepRecord(
+                user_id=probe_id,
+                record_date=legacy_day,
+                sleep_time="22:00",
+                wake_time="06:00",
+                note="legacy-row",
+                sync_rev=0,
+            )
+            session.add(legacy)
+            session.flush()
+            checks["legacy_rev_zero"] = int(legacy.sync_rev or 0) == 0
+        web_day = (date.today() - timedelta(days=1)).isoformat()
+        created = client.post(
+            "/api/records",
+            json={
+                "sleep_time": "20:00",
+                "wake_time": "23:30",
+                "record_date": web_day,
+                "note": "from-web",
+            },
+        )
+        checks["web_create"] = created.status_code == 201
+        record_id = created.json().get("id")
+        before_backfill = client.get("/api/sync/pull", params={"cursor": 0}, headers=headers).json().get("rows", [])
+        checks["web_row_pulled"] = any(
+            item.get("payload", {}).get("note") == "from-web" for item in before_backfill
+        )
+        checks["legacy_hidden"] = not any(
+            item.get("payload", {}).get("note") == "legacy-row" for item in before_backfill
+        )
+        with write_session() as session:
+            counts = sync_engine.backfill_missing(session)
+        checks["backfill_records"] = counts.get("sleep_records", 0) >= 1
+        checks["backfill_settings"] = counts.get("user_settings", 0) >= 1
+        after_backfill = client.get("/api/sync/pull", params={"cursor": 0}, headers=headers).json().get("rows", [])
+        checks["legacy_pulled"] = any(
+            item.get("payload", {}).get("note") == "legacy-row" for item in after_backfill
+        )
+        removed = client.delete("/api/records/%s" % record_id)
+        checks["web_delete"] = removed.status_code == 200
+        after_delete = client.get("/api/sync/pull", params={"cursor": 0}, headers=headers).json().get("rows", [])
+        checks["delete_tombstone_pulled"] = any(
+            item.get("payload", {}).get("note") == "from-web" and item.get("deleted_at")
+            for item in after_delete
+        )
+        listed = client.get("/api/records", params={"start_date": "", "end_date": ""}).json()
+        checks["delete_hidden"] = not any(
+            item.get("note") == "from-web" for item in listed.get("items", [])
+        )
+        checks["delete_total"] = listed.get("total") == 1
     out = os.environ.get("SSP_PROBE_OUT")
     if out:
         with open(out, "w", encoding="utf-8") as handle:

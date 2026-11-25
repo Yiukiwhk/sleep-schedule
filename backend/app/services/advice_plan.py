@@ -16,6 +16,7 @@ from ..core.timing import circular_diff_minutes, parse_hhmm
 from ..db import run_with_retry, write_session
 from ..models import AdvicePlan, MealCheck, SleepRecord, User, utcnow
 from . import advice as advice_service
+from . import sync_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -125,21 +126,22 @@ def checkin(
                         MealCheck.user_id == user_id,
                         MealCheck.check_date == check_date,
                         MealCheck.meal == meal,
+                        MealCheck.deleted_at.is_(None),
                     )
                 )
                 .scalars()
                 .first()
             )
             if row is None:
-                session.add(
-                    MealCheck(
-                        user_id=user_id,
-                        check_date=check_date,
-                        meal=meal,
-                        eaten=eaten,
-                        refused=refused,
-                    )
+                row = MealCheck(
+                    user_id=user_id,
+                    check_date=check_date,
+                    meal=meal,
+                    eaten=eaten,
+                    refused=refused,
                 )
+                session.add(row)
+                session.flush()
             else:
                 row.eaten = eaten
                 row.refused = refused
@@ -149,6 +151,7 @@ def checkin(
                     select(SleepRecord)
                     .where(
                         SleepRecord.user_id == user_id,
+                        SleepRecord.deleted_at.is_(None),
                         or_(
                             SleepRecord.meal_date == check_date,
                             # 老记录没有三餐日期：退回按起床日配对（与 meal_day_of 的口径一致）
@@ -172,6 +175,9 @@ def checkin(
                 setattr(record, f"meal_{meal}", eaten)
                 record.updated_at = utcnow()
             session.flush()
+            sync_engine.stamp_row(session, user_id, "meal_checks", row)
+            if record is not None:
+                sync_engine.stamp_row(session, user_id, "sleep_records", record)
 
     run_with_retry(_write, label="meal_checkin")
 

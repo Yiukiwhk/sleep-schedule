@@ -21,7 +21,9 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
 
-CLIENT_VERSION = "0.1.0"
+from . import __version__
+
+CLIENT_VERSION = __version__
 SCHEMA_VERSION = "1"
 MAX_PUSH_ROWS = 300
 BACKUP_KEEP = 10

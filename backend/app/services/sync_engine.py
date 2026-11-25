@@ -16,6 +16,7 @@ import json
 import secrets
 from datetime import date, datetime, timezone
 from typing import Any, Iterable
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -255,6 +256,66 @@ def _append_log(session: Session, user_id: int, table: str, client_row_id: str, 
     session.add(entry)
     session.flush()
     return int(entry.rev)
+
+
+# --------------------------------------------------------------------------- #
+# Server-side writes
+# --------------------------------------------------------------------------- #
+def stamp_row(
+    session: Session, user_id: int, table: str, row: Any, *, op: str = "upsert"
+) -> int:
+    """给"不是经由同步接口"落库的行打上同步标记。
+
+    网页/桌面本地改一条记录时也必须推进 rev，否则 pull 的 `rev > cursor`
+    永远查不到它——桌面端就会一直上报 pushed/pulled 0。op 用 "upsert" 或
+    "delete"（删除走墓碑，见 records.py），和同步接口写日志的口径保持一致。
+    """
+    if not row.client_row_id:
+        row.client_row_id = uuid4().hex
+    row.sync_updated_at = utc_iso_ms()
+    rev = _append_log(session, user_id, table, row.client_row_id, op)
+    row.sync_rev = rev
+    return rev
+
+
+def touch_settings(session: Session, user: models.User, *, op: str = "upsert") -> int:
+    """把用户设置写进 user_settings 行（每用户一行，payload 是设置 JSON）。"""
+    row = session.execute(
+        select(models.SyncSettings).where(models.SyncSettings.user_id == user.id)
+    ).scalar_one_or_none()
+    if row is None:
+        row = models.SyncSettings(user_id=user.id, client_row_id=uuid4().hex, sync_rev=0)
+        session.add(row)
+        session.flush()
+    row.payload = json.dumps(settings_payload(user), ensure_ascii=False, sort_keys=True)
+    return stamp_row(session, user.id, "user_settings", row, op=op)
+
+
+def backfill_missing(session: Session) -> dict[str, int]:
+    """给同步功能上线前就存在的行补 rev/时间戳，并给每个用户补一行设置。
+
+    幂等：只处理 sync_rev == 0 的行、还没有 SyncSettings 的用户。没有这一步，
+    历史数据（比如线上 52 条记录）的 rev 全是 0，`rev > cursor` 一条也拉不到。
+    """
+    counts = {"sleep_records": 0, "meal_checks": 0, "user_settings": 0}
+    for row in session.execute(
+        select(models.SleepRecord).where(models.SleepRecord.sync_rev == 0)
+    ).scalars():
+        stamp_row(session, int(row.user_id), "sleep_records", row)
+        counts["sleep_records"] += 1
+    for row in session.execute(
+        select(models.MealCheck).where(models.MealCheck.sync_rev == 0)
+    ).scalars():
+        stamp_row(session, int(row.user_id), "meal_checks", row)
+        counts["meal_checks"] += 1
+    for user in session.execute(select(models.User)).scalars():
+        exists = session.execute(
+            select(models.SyncSettings.id).where(models.SyncSettings.user_id == user.id)
+        ).scalar_one_or_none()
+        if exists is None:
+            touch_settings(session, user)
+            counts["user_settings"] += 1
+    return counts
 
 
 def _find_record(session: Session, user_id: int, cid: str, payload: dict) -> models.SleepRecord | None:

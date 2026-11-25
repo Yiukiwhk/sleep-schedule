@@ -401,6 +401,14 @@ class ImportResult:
   绑定阶段区分「登录 401」「服务器上没有同步接口」「服务器版本太旧没有设备令牌接口」，错误直接显示在设置页的同步卡上。
 
 - 推送先整批校验，失败返回 `{ok:false, violations:[…]}` 且一行都不落库；成功返回逐行 `applied` / `stale` 与新游标。
+- **网页侧的写入也要能被拉到**（2026-11-26 修复）：同步上线前就存在的行 `sync_rev` 全是 0，而 pull 只返回 `rev > cursor`，
+  于是新建的桌面端会看到「pushed 0 / pulled 0」——记录明明在库里。现在：
+  - `sync_engine.backfill_missing()` 在启动时（`main.py` 的 lifespan，`init_db()` 之后）给 `sync_rev = 0` 的行补 rev、
+    给每个还没有 `SyncSettings` 的用户补一行设置；幂等，日志打印 `sync backfill: {...}`。
+  - `sync_engine.stamp_row()` / `touch_settings()` 由网页写入路径调用：新增/编辑记录（`api/records.py`）、
+    三餐打卡（`services/advice_plan.py`）、修改设置（`api/settings_api.py`）都会推进 rev 并写 `SyncLog`。
+  - 删除改成**墓碑**（`deleted_at`），不再物理删除，这样别的设备 pull 得到「这条没了」；列表/详情/重叠校验/建议引擎/导出
+    全部按 `deleted_at IS NULL` 过滤。物理删除只剩保留期清理（`services/retention.py`）。
 - 发布：`deploy/apply_fix.ps1` 的 `$backendFiles` 与 `deploy/remote_apply_fix.sh` 的 `BACKEND_FILES` 已包含上表新增模块
   （`api/__init__.py`、`api/sync_api.py`、`api/runtime_api.py`、`api/desktop_api.py`、`version.py`、`core/local_guard.py`、
   `app/desktop.py`、`deps.py`、`main.py`、`services/sync_engine.py`）；上线后远端自证新增 4am 段（`/api/runtime` 200、
@@ -546,3 +554,20 @@ class ImportResult:
 已知未做：代码签名（安装包与 exe 均未签名）、自动更新（按 §9 明确不做）、干净虚拟机上的安装/卸载手工验证。
 `latest.json` 与安装包由 `deploy/publish_desktop.ps1` 发布到 `https://yiuki.me/desktop/`（vhost 的 `/desktop/` location 已上线，
 缺失文件回 404 而不是 SPA 首页）。
+
+## 16. 版本记录
+
+### 0.1.1（2026-11-26）
+
+- 修「同步成功但数量都是 0」：同步上线前的历史行 `sync_rev` 为 0，而 pull 只返回 `rev > cursor`，所以新设备什么都拉不到。
+  现在启动时 `services/sync_engine.backfill_missing()` 给这些行补 rev（幂等，日志 `sync backfill: {...}`）；
+  网页侧的新增/编辑/删除也会推进 rev —— `api/records.py`（创建、编辑、软删除）、`services/advice_plan.py`（三餐打卡）、
+  `api/settings_api.py`（设置）都调用 `stamp_row()` / `touch_settings()` 并写 `SyncLog`。
+- 删除改为墓碑（`deleted_at`），列表、分页计数、详情、重叠校验、建议引擎、`/api/desktop/export` 全部按 `deleted_at IS NULL` 过滤；
+  物理删除只留给保留期清理（`services/retention.py`）。这样别的设备 pull 得到「这条没了」，而不是凭空消失。
+- 版本号 0.1.0 → 0.1.1（`desktop/__init__.py`、`backend/app/version.py`）；`MIN_SUPPORTED` 仍为 0.1.0，
+  已装的 0.1.0 不会被拒绝，只会在「发现新版本」提示里看到 0.1.1。
+- 线上部署：`deploy/apply_fix.ps1` → `fix applied: OK`；生产库回填后 `sleep_records 52/52 rev>0`、`meal_checks 22/22 rev>0`、
+  `sync_log` 84 行（其中 40 条属于 tyq）。
+- 产物：`YiukiSleep-setup-0.1.1.exe`（71,986,402 字节，sha256 `42b79bb2902ecffd2bc135db27b4908f02800a801430474ef6b961462d40323e`），
+  `dist\desktop\latest.json` 已由 `deploy/publish_desktop.ps1` 发布到 `https://yiuki.me/desktop/`。

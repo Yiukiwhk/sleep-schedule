@@ -108,7 +108,7 @@ WEIGHT_DECAY = 0.8
 def _recent_records(db, user_id: int, limit_days: int = DEFAULT_HISTORY_DAYS) -> list[SleepRecord]:
     statement = (
         select(SleepRecord)
-        .where(SleepRecord.user_id == user_id)
+        .where(SleepRecord.user_id == user_id, SleepRecord.deleted_at.is_(None))
         .order_by(SleepRecord.record_date.desc(), SleepRecord.id.desc())
         .limit(limit_days)
     )
@@ -177,6 +177,7 @@ def meal_history(
         db.execute(
             select(SleepRecord).where(
                 SleepRecord.user_id == user_id,
+                SleepRecord.deleted_at.is_(None),
                 # 起床日也要纳入：昨天入睡、今天起床的记录属于今天这一格
                 # 三餐记录日可能早于入睡日（跨零点入睡），三个日期都要纳入
                 or_(
@@ -197,7 +198,9 @@ def meal_history(
         (row.check_date, row.meal): row
         for row in db.execute(
             select(MealCheck).where(
-                MealCheck.user_id == user_id, MealCheck.check_date >= start
+                MealCheck.user_id == user_id,
+                MealCheck.deleted_at.is_(None),
+                MealCheck.check_date >= start,
             )
         )
         .scalars()

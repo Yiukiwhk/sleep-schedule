@@ -27,6 +27,7 @@ from .desktop import ensure_local_user
 from .errors import install_error_handlers
 from .models import utcnow
 from .services.retention import run_cleanup
+from .services.sync_engine import backfill_missing
 
 logger = logkit.get_logger("main")
 
@@ -114,6 +115,16 @@ async def lifespan(app: FastAPI):
         ensure_local_user()
     else:
         bootstrap_admin()
+    try:
+        # Rows that predate cloud sync have sync_rev = 0, and pull only returns
+        # "rev > cursor", so without this backfill a fresh device would see an
+        # empty account even though the records are right there.
+        with write_session() as session:
+            counts = backfill_missing(session)
+        if any(counts.values()):
+            logger.info("sync backfill: %s", counts)
+    except Exception:  # pragma: no cover
+        logger.exception("sync backfill failed")
     try:
         run_cleanup()
     except Exception:  # pragma: no cover

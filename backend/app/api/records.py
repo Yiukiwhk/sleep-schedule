@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -33,7 +33,7 @@ from ..schemas import (
     SleepRecordOut,
     SleepRecordUpdate,
 )
-from ..services import retention
+from ..services import retention, sync_engine
 from ..core import logkit
 from .common import page_offset, paginate_params, total_pages
 
@@ -117,6 +117,7 @@ def _check_no_overlap(
         db.query(SleepRecord)
         .filter(
             SleepRecord.user_id == user_id,
+            SleepRecord.deleted_at.is_(None),
             SleepRecord.record_date >= earliest,
             SleepRecord.record_date <= wake_date,
         )
@@ -237,7 +238,7 @@ def list_my_records(
     db: Session = Depends(get_db),
 ) -> SleepRecordListOut:
     page, page_size = pagination
-    conditions = [SleepRecord.user_id == user.id]
+    conditions = [SleepRecord.user_id == user.id, SleepRecord.deleted_at.is_(None)]
     if start_date:
         conditions.append(SleepRecord.record_date >= _check_record_date(start_date))
     if end_date:
@@ -273,12 +274,14 @@ def my_records_meta(
     """录入页需要的元信息：可录入日期范围、保留策略、写入冷却剩余时间。"""
     total = int(
         db.execute(
-            select(func.count(SleepRecord.id)).where(SleepRecord.user_id == user.id)
+            select(func.count(SleepRecord.id)).where(
+                SleepRecord.user_id == user.id, SleepRecord.deleted_at.is_(None)
+            )
         ).scalar_one()
     )
     latest = db.execute(
         select(SleepRecord.record_date)
-        .where(SleepRecord.user_id == user.id)
+        .where(SleepRecord.user_id == user.id, SleepRecord.deleted_at.is_(None))
         .order_by(SleepRecord.record_date.desc())
         .limit(1)
     ).scalar_one_or_none()
@@ -301,7 +304,7 @@ def get_my_record(
     db: Session = Depends(get_db),
 ) -> SleepRecordOut:
     record = db.get(SleepRecord, record_id)
-    if record is None or record.user_id != user.id:      # 越权一律按不存在处理
+    if record is None or record.user_id != user.id or record.deleted_at is not None:
         raise ApiError(404, "error.record_not_found", code="error.record_not_found")
     return serialize_record(record)
 
@@ -339,6 +342,7 @@ def create_my_record(
             )
             session.add(record)
             session.flush()
+            sync_engine.stamp_row(session, int(user.id), "sleep_records", record)
             return record.id
 
     record_id = run_with_retry(_write, label="create_record")
@@ -423,7 +427,9 @@ def update_my_record(
                 raise ApiError(404, "error.record_not_found", code="error.record_not_found")
             for key, value in data.items():
                 setattr(fresh, key, value)
+            fresh.updated_at = utcnow()
             session.flush()
+            sync_engine.stamp_row(session, int(user.id), "sleep_records", fresh)
 
     run_with_retry(_update, label="update_record")
     _touch_write(user.id)
@@ -448,15 +454,24 @@ def delete_my_record(
     user: User = Depends(current_user),
     ctx: RequestContext = Depends(client_meta),
 ) -> MessageOut:
+    """软删除：留一行墓碑（deleted_at），别的设备同步时才能知道这条没了。
+
+    物理删除只发生在保留期清理（services/retention.py）里。
+    """
+
     def _delete() -> int:
         with write_session() as session:
-            result = session.execute(
-                delete(SleepRecord).where(
+            record = session.execute(
+                select(SleepRecord).where(
                     SleepRecord.id == record_id, SleepRecord.user_id == user.id
                 )
-            )
+            ).scalar_one_or_none()
+            if record is None or record.deleted_at is not None:
+                return 0
+            record.deleted_at = utcnow()
+            sync_engine.stamp_row(session, int(user.id), "sleep_records", record, op="delete")
             session.flush()
-            return result.rowcount or 0
+            return 1
 
     removed = run_with_retry(_delete, label="delete_record")
     if not removed:
@@ -484,13 +499,24 @@ def batch_delete_my_records(
 
     def _delete() -> int:
         with write_session() as session:
-            result = session.execute(
-                delete(SleepRecord).where(
-                    SleepRecord.user_id == user.id, SleepRecord.id.in_(payload.ids)
+            rows = (
+                session.execute(
+                    select(SleepRecord).where(
+                        SleepRecord.user_id == user.id,
+                        SleepRecord.id.in_(payload.ids),
+                        SleepRecord.deleted_at.is_(None),
+                    )
                 )
+                .scalars()
+                .all()
             )
+            for record in rows:
+                record.deleted_at = utcnow()
+                sync_engine.stamp_row(
+                    session, int(user.id), "sleep_records", record, op="delete"
+                )
             session.flush()
-            return result.rowcount or 0
+            return len(rows)
 
     removed = run_with_retry(_delete, label="batch_delete_records")
     logkit.log_event(
