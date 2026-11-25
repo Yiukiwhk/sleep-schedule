@@ -434,6 +434,7 @@ class ImportResult:
   卸载只删程序目录，**`%PROGRAMDATA%\YiukiSleep` 明确保留**。没有 ISCC 时 `build.ps1` 自动跳过，只产出 onedir + zip 前的目录。
 - `desktop/build/build.ps1`：pytest（可 `-SkipTests`）→ PyInstaller（`desktop/build/app.spec`）→ 跑 `dist\desktop\YiukiSleep\YiukiSleep.exe --smoke --report` →
   `SHA256SUMS.txt` → `dist\desktop\latest.json`（`version` / `min_supported` / `notes` / `url` / `sha256` / `size`）。
+  pytest 阶段优先用 `backend\.venv`（带 pytest + httpx），没有该 venv 时才退回构建 venv，所以构建 venv 只需运行时依赖。
 - `backend/app/version.py` 的 `VERSION` 是版本唯一来源；`desktop/__init__.py` 与上一行保持一致，`build.ps1` 从后者读版本号。
 - `desktop/updater.py`（新增）：读 `https://yiuki.me/desktop/latest.json`，`parse_version` / `is_newer` / `check()`；
   网络或格式失败只返回 `error` 不抛异常；非 https 下载地址与非法 sha256 进 `warnings`。
