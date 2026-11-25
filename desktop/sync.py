@@ -195,6 +195,114 @@ def bind(
     return binding
 
 
+def plan_summary(row: Any) -> dict[str, Any]:
+    """给界面看的方案摘要（不含完整 payload）。"""
+    if row is None:
+        return {"available": False}
+    if isinstance(row, dict):
+        payload = row.get("payload") or {}
+    else:
+        try:
+            payload = json.loads(row.payload) if row.payload else {}
+        except (TypeError, ValueError):
+            payload = {}
+    days = payload.get("days")
+    if days is None:
+        days = getattr(row, "days", 0)
+    return {
+        "available": True,
+        "start_date": payload.get("start_date") or getattr(row, "start_date", ""),
+        "target_date": payload.get("target_date") or getattr(row, "target_date", ""),
+        "days": int(days or 0),
+        "target_sleep_time": payload.get("target_sleep_time")
+        or getattr(row, "target_sleep_time", ""),
+        "target_wake_time": payload.get("target_wake_time")
+        or getattr(row, "target_wake_time", ""),
+        "updated_at": payload.get("updated_at")
+        or getattr(row, "sync_updated_at", "")
+        or "",
+    }
+
+
+def local_plan_summary(paths: dict[str, Path]) -> dict[str, Any]:
+    db, models = _import_backend()
+    with db.SessionLocal() as session:  # type: ignore[attr-defined]
+        user = session.query(models.User).order_by(models.User.id).first()
+        if user is None:
+            return {"available": False}
+        return plan_summary(active_plan(session, user.id, models))
+
+
+def cloud_plan(client: HttpClient, binding: dict[str, Any]) -> dict[str, Any] | None:
+    """云端当前活跃方案（一行 pull 格式），没有则 None。"""
+    status, body = client.request(
+        "GET", "/api/sync/plan", headers={"X-Device-Token": binding.get("token", "")}
+    )
+    if status == 404:
+        return None
+    if status != 200 or not body.get("ok") or not body.get("available"):
+        return None
+    row = body.get("row")
+    return row if isinstance(row, dict) else None
+
+
+def plan_state(paths: dict[str, Path]) -> dict[str, Any]:
+    """本机与云端的方案对比；两边都有时 needs_choice=True。"""
+    local = local_plan_summary(paths)
+    cloud: dict[str, Any] = {"available": False}
+    binding = load_binding(paths)
+    if binding is not None:
+        try:
+            row = cloud_plan(HttpClient(binding.get("server", "")), binding)
+        except SyncError:
+            row = None
+        if row is not None:
+            cloud = plan_summary(row)
+    conflict = bool(local.get("available") and cloud.get("available"))
+    if conflict and (
+        local.get("start_date") == cloud.get("start_date")
+        and local.get("target_sleep_time") == cloud.get("target_sleep_time")
+        and local.get("target_wake_time") == cloud.get("target_wake_time")
+    ):
+        conflict = False
+    return {"local": local, "cloud": cloud, "needs_choice": conflict}
+
+
+def choose_plan(paths: dict[str, Path], choice: str) -> dict[str, Any]:
+    """用户在"本机方案 / 云端方案"之间做选择后落地，再跑一次同步把结果对齐。"""
+    binding = load_binding(paths)
+    if binding is None:
+        raise SyncError("尚未绑定云端账号")
+    db, models = _import_backend()
+    client = HttpClient(binding.get("server", ""))
+    if choice == "cloud":
+        row = cloud_plan(client, binding)
+        if row is None:
+            raise SyncError("云端还没有方案")
+        with db.SessionLocal() as session:  # type: ignore[attr-defined]
+            user = session.query(models.User).order_by(models.User.id).first()
+            if user is None:
+                raise SyncError("本机还没有本地账号")
+            apply_pull_row(session, user, row, models, force=True)
+            session.commit()
+    elif choice == "local":
+        with db.SessionLocal() as session:  # type: ignore[attr-defined]
+            user = session.query(models.User).order_by(models.User.id).first()
+            if user is None:
+                raise SyncError("本机还没有本地账号")
+            row = active_plan(session, user.id, models)
+            if row is None:
+                raise SyncError("本机还没有方案")
+            # 让这条行看起来"刚改过"，下一次 push 就会覆盖云端。
+            row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.commit()
+    else:
+        raise SyncError("未知的方案选择")
+    run(paths, make_snapshot=False)
+    return plan_state(paths)
+
+
+
 def unbind(paths: dict[str, Path], *, revoke: bool = True) -> None:
     binding = load_binding(paths)
     if binding and revoke:
@@ -274,6 +382,23 @@ def _payload_for(table: str, row: Any) -> dict[str, Any]:
             "eaten": bool(row.eaten),
             "refused": bool(row.refused),
         }
+    if table == "advice_plans":
+        try:
+            plan = json.loads(row.payload) if row.payload else {}
+        except ValueError:
+            plan = {}
+        return {
+            "mode": row.mode,
+            "days": int(row.days),
+            "start_date": row.start_date,
+            "target_date": row.target_date,
+            "target_sleep_time": row.target_sleep_time,
+            "target_wake_time": row.target_wake_time,
+            "engine": row.engine,
+            "replans": int(row.replans or 0),
+            "postponed_days": int(row.postponed_days or 0),
+            "plan": plan,
+        }
     return {
         "target_sleep_time": row.target_sleep_time,
         "target_wake_time": row.target_wake_time,
@@ -318,7 +443,26 @@ def collect_push_rows(session: Any, user_id: int, models: Any) -> list[dict[str,
                     "payload": _payload_for("settings", user),
                 }
             )
+    plan = active_plan(session, user_id, models)
+    if plan is not None and _dirty(plan):
+        if not plan.client_row_id:
+            plan.client_row_id = uuid.uuid4().hex
+        rows.append(_row(table="advice_plans", row=plan, models=models))
     return rows
+
+
+def active_plan(session: Any, user_id: int, models: Any) -> Any:
+    """本机当前活跃的方案（历史快照不参与同步）。"""
+    return (
+        session.query(models.AdvicePlan)
+        .filter(
+            models.AdvicePlan.user_id == user_id,
+            models.AdvicePlan.is_active.is_(True),
+            models.AdvicePlan.deleted_at.is_(None),
+        )
+        .order_by(models.AdvicePlan.id.desc())
+        .first()
+    )
 
 
 def _dirty_settings(row: Any, user: Any) -> bool:
@@ -352,8 +496,14 @@ def _row(*, table: str, row: Any, models: Any) -> dict[str, Any]:
     }
 
 
-def apply_pull_row(session: Any, user: Any, item: dict[str, Any], models: Any) -> str:
-    """把远端一行按 LWW 落到本地；返回 applied / stale。"""
+def apply_pull_row(
+    session: Any, user: Any, item: dict[str, Any], models: Any, *, force: bool = False
+) -> str:
+    """把远端一行按 LWW 落到本地；返回 applied / stale。
+
+    ``force`` 用于用户在"本机方案 / 云端方案"里明确选了云端：此时不管本地
+    时间戳更新与否，都以云端这一行为准。
+    """
     table = item.get("table")
     cid = str(item.get("client_row_id") or "")
     incoming = _parse(item.get("updated_at"))
@@ -390,10 +540,21 @@ def apply_pull_row(session: Any, user: Any, item: dict[str, Any], models: Any) -
                 )
                 .one_or_none()
             )
-    else:
+    elif table == "advice_plans":
+        row = (
+            session.query(models.AdvicePlan)
+            .filter(models.AdvicePlan.user_id == user.id, models.AdvicePlan.client_row_id == cid)
+            .one_or_none()
+        )
+        if row is None:
+            row = active_plan(session, user.id, models)
+    elif table in ("settings", "user_settings"):
         row = _settings_row(session, user, models)
+    else:
+        # 新版本会同步方案等新表；旧客户端拉到不认识的行就直接跳过。
+        return "ignored"
     current = _current_stamp(table, row, user)
-    newer = current is None or (incoming is not None and incoming > current) or (
+    newer = force or current is None or (incoming is not None and incoming > current) or (
         incoming is not None and current is not None and incoming == current and deleted is not None
     )
     if not newer:
@@ -408,6 +569,19 @@ def apply_pull_row(session: Any, user: Any, item: dict[str, Any], models: Any) -
     row.deleted_at = deleted
     if deleted is None:
         _apply_payload(table, row, item.get("payload") or {}, user)
+    if table == "advice_plans":
+        # 每台机器只保留一份活跃方案：刚落地的这份变活跃，其余置非活跃。
+        for other in (
+            session.query(models.AdvicePlan)
+            .filter(
+                models.AdvicePlan.user_id == user.id,
+                models.AdvicePlan.is_active.is_(True),
+                models.AdvicePlan.id != row.id,
+            )
+            .all()
+        ):
+            other.is_active = False
+        row.is_active = deleted is None
     # 本地时间戳对齐远端，避免刚拉下来的行又被当成"脏行"推回去。
     if hasattr(row, "updated_at") and incoming is not None:
         row.updated_at = incoming
@@ -465,6 +639,20 @@ def _make_row(table: str, user: Any, cid: str, incoming: Any, models: Any) -> An
             eaten=False,
             refused=False,
         )
+    if table == "advice_plans":
+        return models.AdvicePlan(
+            user_id=user.id,
+            client_row_id=cid,
+            is_active=False,
+            mode="slow",
+            days=1,
+            start_date="1970-01-01",
+            target_date="1970-01-01",
+            target_sleep_time="00:00",
+            target_wake_time="00:00",
+            engine="stub",
+            payload="{}",
+        )
     return models.SyncSettings(user_id=user.id, client_row_id=cid)
 
 
@@ -484,6 +672,17 @@ def _apply_payload(table: str, row: Any, payload: dict[str, Any], user: Any = No
         row.meal = str(payload.get("meal") or row.meal)
         row.eaten = bool(payload.get("eaten"))
         row.refused = bool(payload.get("refused"))
+    elif table == "advice_plans":
+        row.mode = str(payload.get("mode") or "slow")
+        row.days = int(payload.get("days") or 1)
+        row.start_date = str(payload.get("start_date") or row.start_date)
+        row.target_date = str(payload.get("target_date") or row.target_date)
+        row.target_sleep_time = str(payload.get("target_sleep_time") or row.target_sleep_time)
+        row.target_wake_time = str(payload.get("target_wake_time") or row.target_wake_time)
+        row.engine = str(payload.get("engine") or row.engine)
+        row.replans = int(payload.get("replans") or 0)
+        row.postponed_days = int(payload.get("postponed_days") or 0)
+        row.payload = json.dumps(payload.get("plan") or {}, ensure_ascii=False, default=str)
     elif table in ("settings", "user_settings"):
         # 设置既落在 SyncSettings.payload（用于同步比较），也写回 User 行（界面读这里）。
         row.payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -631,6 +830,7 @@ def _mark_pushed(rows: list[dict[str, Any]], results: list[dict[str, Any]], mode
         "sleep_records": models.SleepRecord,
         "meal_checks": models.MealCheck,
         "user_settings": models.SyncSettings,
+        "advice_plans": models.AdvicePlan,
     }
     with db.SessionLocal() as session:
         for row in rows:

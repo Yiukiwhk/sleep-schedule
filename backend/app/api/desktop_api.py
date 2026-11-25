@@ -208,6 +208,24 @@ def sync_unbind() -> dict:
     return _guard(action, _paths())
 
 
+@router.get("/desktop/sync/plan")
+def sync_plan_state() -> dict:
+    """本机与云端的活跃方案对比；needs_choice 时前端弹二选一。"""
+    return _guard(lambda module, paths: module.plan_state(paths), _paths())
+
+
+class PlanChoiceIn(BaseModel):
+    choice: str = Field(pattern="^(local|cloud)$")
+
+
+@router.post("/desktop/sync/plan")
+def sync_plan_choose(payload: PlanChoiceIn) -> dict:
+    def action(module: Any, paths: dict[str, Path]) -> dict:
+        return module.choose_plan(paths, payload.choice)
+
+    return _guard(action, _paths())
+
+
 # --------------------------------------------------------------------------- #
 # Import bridge: parsing runs in the desktop process, and nothing is written
 # until the user confirms the preview table (docs/DESKTOP.md section 8).

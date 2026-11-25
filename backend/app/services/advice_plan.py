@@ -56,6 +56,8 @@ def save_plan(
             )
             session.add(plan)
             session.flush()
+            # 方案也要同步：给新快照打 rev，另一台设备下次 pull 就能拿到。
+            sync_engine.stamp_row(session, int(user_id), "advice_plans", plan)
             return int(plan.id)
 
     return run_with_retry(_write, label="save_advice_plan")

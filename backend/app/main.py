@@ -122,7 +122,15 @@ async def lifespan(app: FastAPI):
         with write_session() as session:
             counts = backfill_missing(session)
         if any(counts.values()):
-            logger.info("sync backfill: %s", counts)
+            # Keep this line free of braces: desktop --smoke parses the first "{"
+            # on stdout as its JSON report.
+            logger.info(
+                "sync backfill done: records=%s meals=%s settings=%s plans=%s",
+                counts.get("sleep_records", 0),
+                counts.get("meal_checks", 0),
+                counts.get("user_settings", 0),
+                counts.get("advice_plans", 0),
+            )
     except Exception:  # pragma: no cover
         logger.exception("sync backfill failed")
     try:

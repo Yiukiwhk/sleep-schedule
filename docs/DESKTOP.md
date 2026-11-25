@@ -161,8 +161,16 @@ desktop/
 
 ## 7. 同步协议
 
-**同步范围（v1）**：`sleep_records`、`meal_checks`、`user_settings`（目标作息、三餐开关、锚点、语言、主题）。
-**不同步**：`advice_plans`（各自重算）、日志、会话。
+**同步范围（v1）**：`sleep_records`、`meal_checks`、`user_settings`（目标作息、三餐开关、锚点、语言、主题）、
+`advice_plans`（**只同步当前活跃方案**，见下）。
+**不同步**：历史方案快照（各自留本机）、日志、会话。
+
+**方案同步（0.1.2 起）**：`advice_plans` 与记录一样有 `client_row_id`/`sync_updated_at`/`sync_rev`。
+每台机器只保留一份活跃方案；推送/拉取时把同用户其它活跃行自动置为非活跃。
+绑定完成后桌面端调用 `GET /api/sync/plan` 取云端活跃方案，与本机方案比对：
+两边都有且目标时间不同则 UI 弹出「使用本机方案 / 使用云端方案」二选一——
+选云端时忽略 LWW、强制落地云端那行（`apply_pull_row(..., force=True)`），选本机时把本机行的时间戳刷新后 push 覆盖云端。
+不认识的表名在客户端直接跳过（`apply_pull_row` 返回 `ignored`），因此旧客户端拉到方案行不会报错。
 
 **行标识**：每行有 `client_row_id`（UUID v4，本机生成，永不变）+ `updated_at`（UTC ISO8601，毫秒）。
 记录额外保留 `record_date` 作为业务唯一键；服务端 `(user_id, record_date)` 唯一。
@@ -185,6 +193,7 @@ desktop/
 | GET | `/api/sync/status` | 返回 `{ok, server_version, min_client, schema_version, quota, violations[]}` |
 | POST | `/api/sync/push` | `{cursor, rows:[{table, client_row_id, updated_at, deleted_at, payload}]}` → 逐行结果 + 新游标 |
 | GET | `/api/sync/pull?cursor=` | 增量拉取 + `has_more` |
+| GET | `/api/sync/plan` | 云端当前活跃方案（绑定后让用户选本机/云端） |
 | POST | `/api/sync/account` | 选项 B 用：桌面端新建账号（限流 + `X-Client: desktop`） |
 
 **合规性检查（每次同步前，服务端执行）**
@@ -196,7 +205,7 @@ desktop/
 3. 账号状态正常（未锁定、未在注销审核中、配额未超）。
 4. 逐行数据校验：日期范围（今天-3650 ~ 今天+1）、`wake_date >= record_date`、
    `wake_date <= 今天`（与产品规则一致）、备注长度 ≤ 200、`meal_checks` 必须关联已存在的 `record_date`、
-   单次 push ≤ 500 行、单行 payload ≤ 8 KB、未知表名拒绝。
+   单次 push ≤ 500 行、单行 payload ≤ 64 KB（方案快照较大，0.1.2 起从 8 KB 放宽）、未知表名拒绝。
 5. 失败返回 `{ok:false, violations:[{code, table, client_row_id, message}]}`，
    客户端**整批不落地**，在「同步异常」里逐条展示，用户可修正或跳过该行。
 
@@ -275,8 +284,32 @@ class ImportResult:
 | 集成 | 两台“机器”（两个临时数据目录）互为对端，跑 push/pull 收敛；重复推送幂等 |
 | 桌面自检 | `YiukiSleep.exe --smoke`：起服务 → `/healthz` 200 → `/api/auth/me` 返回本机用户 → 建一条记录 → 退出码 0 |
 | 手工清单 | 首次启动、关机重启数据在、绑定/解除绑定、导入 JSON/CSV/截图、断网同步失败提示、更新提示、卸载保留数据 |
+| 干净虚拟机 | 见下方「虚拟机验收流程」：快照 → 装 0.1.1 → 升级到 0.1.2 → 卸载保留数据 → 回滚快照 |
 
 现有 8 个静态检查与 `accept_local.ps1` 继续跑服务端模式；桌面模式新增 `pytest -m desktop`。
+
+### 虚拟机验收流程（30 分钟）
+
+本机没有管理员权限、也不能真装一次安装包，所以「全新机器」这条只能在虚拟机里走。宿主机任选
+VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（Windows 专业版自带）。
+
+1. **准备**：装 Windows 10/11 虚拟机 → 装 VMware/VirtualBox 增强工具（否则剪贴板/共享文件夹不可用）→
+   打一个干净快照 `clean`。把 `YiukiSleep-setup-<版本>.exe` 用共享文件夹或拖拽放进虚拟机桌面。
+2. **安装**（验证 P4 安装路径与 ACL）：双击安装包 → 默认装到 `%ProgramFiles%\YiukiSleep` →
+   勾选/取消桌面图标各试一次 → 安装完成后自动启动。首次启动应直接进主界面（无登录页），
+   创建一条昨天的记录，确认写入不报错。
+3. **数据位置**：`Win+R` 输入 `%PROGRAMDATA%\YiukiSleep` → 应看到 `data\app.db`、`logs\app.log`；
+   用 `icacls` 或属性→安全 确认 `Users` 有「修改」权限（安装器 `[Dirs] users-modify` 生效）。
+4. **升级**（验证 P4 更新提示）：把 `%PROGRAMDATA%\YiukiSleep\config.json` 里 `check_updates` 保持 true （默认），
+   用上一版安装包装一次并启动旧版 → 设置页应出现「发现新版本 x.y.z」；点链接应打开浏览器下载页。
+   然后用新版安装包覆盖安装 → 数据仍在（记录条数不变）。
+5. **同步**：设置→云同步 → 服务器留空 → 用测试账号登录并绑定 → 点「立即同步」→ 记录条数应与云端一致；
+   若云端与本机都有方案，应弹出「使用本机方案 / 使用云端方案」二选一；选一个后方案卡片目标时间随之改变。
+6. **卸载**：设置→应用→卸载 → 重新打开 `%PROGRAMDATA%\YiukiSleep`，**数据目录必须还在**；
+   再装一次，记录仍在（卸载不删数据是设计）。
+7. **回滚**：删除虚拟机或恢复 `clean` 快照，避免把测试账号/证书留在机器上。
+
+验收记录建议：每条截图 + 安装包版本 + 日期，贴进 issue 或本文件下方「版本记录」。
 
 ## 12. 里程碑与验收
 
@@ -297,6 +330,23 @@ class ImportResult:
 | OCR 识别错误污染建议 | 强制确认页；低置信度默认不勾选；导入记录打 `source="ocr"` 便于回溯 |
 | 同步冲突丢数据 | 每次同步前本地自动导出 JSON 快照到 `backup/`，保留最近 10 份 |
 | 杀软误报 | onedir + 不做自解压；README 说明；后续可签名 |
+| SmartScreen 首次运行警告 | 没签名时用户会看到「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」即可；签名见下 |
+
+### 代码签名：现价与开源免费方案
+
+| 方案 | 参考价格 | 适合谁 | 说明 |
+|---|---|---|---|
+| 自签名（自建根证书） | 0 | 只有自己用 | 只在你亲手导入根证书的机器上能消警告，别人下载仍红 |
+| Certum Open Source Code Signing | 约 €80–150/年 | 开源项目 | 需公开仓库；证书走 SimplySign 云签名 |
+| Azure Trusted Signing | $9.99/月（约 ¥850/年） | 有 3 年历史的组织 | 需公司/组织实体与 3 年可查历史，个人开发者一般过不了 |
+| 普通 OV 代码签名（Sectigo/DigiCert/GlobalSign 或国内代理） | ¥1,500–3,500/年（个人）／¥2,500–5,000/年（企业） | 个人/小团队 | 2023 起 CA/B 要求硬件令牌或云 HSM，不能只用 pfx 文件 |
+| EV 代码签名 | ¥4,000–8,000/年 | 需要尽快建立信誉 | 硬件令牌，SmartScreen 信誉建立更快，但对本项目属过度投入 |
+| SignPath.io 社区版 | 0 | **公开仓库 + OSI 许可** | 免费给开源项目签名（Windows 安装包/exe），但必须由它的 CI 集成构建，且有审核 |
+
+结论（给本项目的建议）：**先不买证书**。当前是个人自用/小范围分发，警告可绕过；如果之后要公开发布给陌生人用，
+最合适的是 `SignPath.io`（前提：仓库开源，例如 MIT/Apache-2.0），否则退而求其次选 Certum 的开源/个人 OV（约 ¥700–1,200/年）。
+证书到手后只需在 `desktop/build/build.ps1` 里加一步 `signtool sign /fd SHA256 /tr <时间戳> /td SHA256 <exe>`，
+并在安装包的 `[Run]` 之后对 setup 也签一次，其余流程不变。
 
 **需要你确认的两点**（不影响 P0/P1 开工）：
 
@@ -401,6 +451,11 @@ class ImportResult:
   绑定阶段区分「登录 401」「服务器上没有同步接口」「服务器版本太旧没有设备令牌接口」，错误直接显示在设置页的同步卡上。
 
 - 推送先整批校验，失败返回 `{ok:false, violations:[…]}` 且一行都不落库；成功返回逐行 `applied` / `stale` 与新游标。
+- **方案也同步**（2026-11-26 追加）：`advice_plans` 只传当前活跃方案（历史快照留本机）；`sync_engine.plan_payload()` /
+  `active_plan_row()`、`GET /api/sync/plan`；单行 payload 上限从 8 KB 放宽到 64 KB。绑定后设置页对比本机与云端的
+  开始日期/目标时间，不一致就显示「使用本机方案 / 使用云端方案」，选择结果经
+  `POST /api/desktop/sync/plan` 落地（选云端走 `force=True` 忽略 LWW，选本机则刷新时间戳后 push 覆盖云端）。
+  旧客户端不认识 `advice_plans` 行时 `apply_pull_row()` 返回 `ignored` 直接跳过，所以不用改 `SCHEMA_VERSION`。
 - **网页侧的写入也要能被拉到**（2026-11-26 修复）：同步上线前就存在的行 `sync_rev` 全是 0，而 pull 只返回 `rev > cursor`，
   于是新建的桌面端会看到「pushed 0 / pulled 0」——记录明明在库里。现在：
   - `sync_engine.backfill_missing()` 在启动时（`main.py` 的 lifespan，`init_db()` 之后）给 `sync_rev = 0` 的行补 rev、
@@ -419,7 +474,8 @@ class ImportResult:
 
 - `desktop/sync.py`（新增）：绑定/解绑（设备令牌只存 DPAPI 密文）、脏行收集、分批 push、按游标 pull + LWW 落到本地库、每次同步前导出 JSON 快照（保留 10 份）。
   关键约束：push 响应里的游标是服务端位置，**不能**拿它推进本机 pull 游标；脏行必须带上本地 `updated_at`，否则会被服务端判成 `stale`。
-- `backend/app/api/desktop_api.py`：`GET /api/desktop/sync/state`、`POST /api/desktop/sync/{bind,create,run,unbind}` 桥接（`SyncError` → 409 `sync.failed`）。
+- `backend/app/api/desktop_api.py`：`GET /api/desktop/sync/state`、`POST /api/desktop/sync/{bind,create,run,unbind}` 桥接（`SyncError` → 409 `sync.failed`）；
+  `GET /api/desktop/sync/plan` 拉两边方案对比（`plan_state`），`POST /api/desktop/sync/plan` 提交 `{"choice":"local"|"cloud"}`。
 - `frontend/user/js/pages/settings.js`：「云同步」卡三态（未绑定 / 已绑定 / 同步异常），默认按「上传合并」绑定；解绑保留本机数据。
 - i18n 新增 17 个同步键（zh/en）。
 
@@ -428,7 +484,7 @@ class ImportResult:
 | 项 | 结果 |
 |---|---|
 | `pytest tests\test_sync_protocol.py` | 1 passed（设备令牌、整批校验、幂等、墓碑、新账号宽限、限流） |
-| `pytest tests\test_sync_convergence.py` | 5 passed（两台机器 50 条双向收敛、重复推送幂等、墓碑不复活、较新备注双向胜出、断网绑定报错、三餐随记录同步） |
+| `pytest tests\test_sync_convergence.py` | 6 passed（两台机器 50 条双向收敛、重复推送幂等、墓碑不复活、较新备注双向胜出、断网绑定报错、三餐随记录同步、方案同步与二选一） |
 | 全套 pytest（advice / desktop_mode / desktop_shell / sync_protocol / sync_convergence） | 41 passed |
 
 ### P3 校验与导入 —— 已完成（2026-11-25）
@@ -571,3 +627,20 @@ class ImportResult:
   `sync_log` 84 行（其中 40 条属于 tyq）。
 - 产物：`YiukiSleep-setup-0.1.1.exe`（71,986,402 字节，sha256 `42b79bb2902ecffd2bc135db27b4908f02800a801430474ef6b961462d40323e`），
   `dist\desktop\latest.json` 已由 `deploy/publish_desktop.ps1` 发布到 `https://yiuki.me/desktop/`。
+
+### 0.1.2（2026-11-26）
+
+- **方案也进同步**：`advice_plans` 只传当前活跃方案（历史快照留本机）；`sync_engine.plan_payload()` / `active_plan_row()`、
+  `GET /api/sync/plan`；单行 payload 上限 8 KB → 64 KB。绑定后若本机与云端都有方案且开始日期/目标时间不同，
+  设置页弹「使用本机方案 / 使用云端方案」：选云端用 `apply_pull_row(..., force=True)` 忽略 LWW 强落地，
+  选本机则刷新时间戳后 push 覆盖云端。旧客户端不认识 `advice_plans` 行时 `apply_pull_row()` 返回 `ignored` 跳过，
+  所以 `SCHEMA_VERSION` 不变、`MIN_SUPPORTED` 仍是 0.1.0。
+- 版本号 0.1.1 → 0.1.2（`desktop/__init__.py`、`backend/app/version.py`）；已装的 0.1.1 会在「发现新版本」里看到提示。
+- 线上部署 `fix applied: OK`（4am 段新增 `stamp_row` / `backfill_missing` / `active_plan_row` / `@router.get("/plan")` 四条 grep）。
+  生产库探针：`advice_plans` 19 列含 `client_row_id/sync_updated_at/sync_rev/deleted_at`，66 行中 5 条活跃方案全部 `rev > 0`
+  （user 2/3/4/7/9 各 1 条），`sync_log` 89 行、其中 `table_name='advice_plans'` 5 行。
+- 桌面端设置页同步卡：绑定后自动比对两边方案，冲突时显示二选一；选择结果经 `POST /api/desktop/sync/plan` 落地并自动再同步一次。
+- 测试：`test_sync_convergence` 新增「方案同步与二选一」用例（A 建方案 → B 本地另有方案 → 绑定时 needs_choice →
+  选云端生效 → 新机器 C 拉到同一方案 → B 改成本地方案后选「使用本机」覆盖云端），6 passed；desktop 套件 30 passed / 2 skipped。
+- 产物：`YiukiSleep-setup-0.1.2.exe`（72,003,864 字节，sha256
+  `a2c0a8b94eefc1741edec4750a5e659e64b6a2a59ab6d08681476947178ee5e1`），`latest.json` 已发布（HTTP 200，指向 0.1.2 安装包）。

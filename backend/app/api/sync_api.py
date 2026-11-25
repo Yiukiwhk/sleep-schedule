@@ -264,6 +264,20 @@ def sync_pull(
     return {"ok": True, "rows": rows, "cursor": new_cursor, "has_more": has_more}
 
 
+@router.get("/plan")
+def sync_plan(
+    request: Request,
+    user: models.User = Depends(device_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """云端当前活跃方案（桌面端绑定后用它和本机方案对比，让用户选一份）。"""
+    violations = _check_client_headers(request) + _grace_violation(user, db, request)
+    if violations:
+        return {"ok": False, "violations": violations, "available": False}
+    row = sync_engine.active_plan_row(db, user)
+    return {"ok": True, "available": row is not None, "row": row}
+
+
 @router.post("/account")
 def create_sync_account(
     payload: AccountIn,

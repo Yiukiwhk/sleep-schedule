@@ -4,7 +4,7 @@ Keep this file ASCII-only: it is imported very early (before logging is set up)
 and is also read by build tooling on machines whose console codepage is not UTF-8.
 """
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 # Oldest desktop build that may talk to this server.  The updater manifest on the
 # site (desktop/latest.json) carries the same value; a client below it gets

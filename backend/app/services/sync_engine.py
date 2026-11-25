@@ -24,9 +24,9 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..version import MIN_SUPPORTED, SCHEMA_VERSION, VERSION
 
-SYNC_TABLES = ("sleep_records", "meal_checks", "user_settings")
+SYNC_TABLES = ("sleep_records", "meal_checks", "user_settings", "advice_plans")
 MAX_ROWS_PER_PUSH = 500
-MAX_PAYLOAD_BYTES = 8 * 1024
+MAX_PAYLOAD_BYTES = 64 * 1024
 TOMBSTONE_DAYS = 180
 MAX_PAST_DAYS = 3650
 
@@ -134,6 +134,26 @@ def settings_payload(user: models.User) -> dict[str, Any]:
     }
 
 
+def plan_payload(row: models.AdvicePlan) -> dict[str, Any]:
+    """当前活跃方案的完整快照。只同步"正在使用"的那一份，历史快照留在本机。"""
+    try:
+        plan = json.loads(row.payload) if row.payload else {}
+    except (TypeError, ValueError):
+        plan = {}
+    return {
+        "mode": row.mode,
+        "days": int(row.days),
+        "start_date": row.start_date,
+        "target_date": row.target_date,
+        "target_sleep_time": row.target_sleep_time,
+        "target_wake_time": row.target_wake_time,
+        "engine": row.engine,
+        "replans": int(row.replans or 0),
+        "postponed_days": int(row.postponed_days or 0),
+        "plan": plan,
+    }
+
+
 def tombstone_at(row: Any) -> str | None:
     return utc_iso_ms(row.deleted_at) if row.deleted_at else None
 
@@ -175,7 +195,9 @@ def validate_rows(
             violations.append(_violation("sync.bad_payload", table, cid, "payload 必须是对象"))
             continue
         if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > MAX_PAYLOAD_BYTES:
-            violations.append(_violation("sync.payload_too_large", table, cid, "单行数据超过 8KB"))
+            violations.append(
+                _violation("sync.payload_too_large", table, cid, "单行数据超过 64KB")
+            )
             continue
         key = (table, cid)
         if key in seen:
@@ -188,6 +210,8 @@ def validate_rows(
             violations.extend(
                 _validate_meal(payload, cid, today, parse_date, known_record_dates or set())
             )
+        elif table == "advice_plans":
+            violations.extend(_validate_plan(payload, cid, parse_date))
         else:
             violations.extend(_validate_settings(payload, cid))
     return violations
@@ -246,6 +270,30 @@ def _validate_settings(payload: dict, cid: str) -> list[dict[str, str]]:
     return problems
 
 
+def _validate_plan(payload: dict, cid: str, parse_date) -> list[dict[str, str]]:
+    """方案快照：只校验结构，内容由引擎自己解释（换引擎时不做过度限制）。"""
+    problems: list[dict[str, str]] = []
+    plan = payload.get("plan")
+    if not isinstance(plan, dict) or not plan:
+        problems.append(_violation("sync.bad_plan", "advice_plans", cid, "plan 必须是非空对象"))
+        return problems
+    start = payload.get("start_date")
+    if parse_date(start) is None:
+        problems.append(_violation("sync.bad_date", "advice_plans", cid, "start_date 不是日期"))
+    target = payload.get("target_date")
+    if target not in (None, "") and parse_date(target) is None:
+        problems.append(_violation("sync.bad_date", "advice_plans", cid, "target_date 不是日期"))
+    for key in ("target_sleep_time", "target_wake_time"):
+        text = str(payload.get(key) or "")
+        if len(text) != 5 or text[2] != ":" or not text[:2].isdigit() or not text[3:].isdigit():
+            problems.append(_violation("sync.bad_time", "advice_plans", cid, f"{key} 必须是 HH:MM"))
+    for key in ("mode", "engine"):
+        text = str(payload.get(key) or "")
+        if not text or len(text) > 16:
+            problems.append(_violation("sync.bad_plan", "advice_plans", cid, f"{key} 长度不对"))
+    return problems
+
+
 # --------------------------------------------------------------------------- #
 # Apply (push)
 # --------------------------------------------------------------------------- #
@@ -297,7 +345,7 @@ def backfill_missing(session: Session) -> dict[str, int]:
     幂等：只处理 sync_rev == 0 的行、还没有 SyncSettings 的用户。没有这一步，
     历史数据（比如线上 52 条记录）的 rev 全是 0，`rev > cursor` 一条也拉不到。
     """
-    counts = {"sleep_records": 0, "meal_checks": 0, "user_settings": 0}
+    counts = {"sleep_records": 0, "meal_checks": 0, "user_settings": 0, "advice_plans": 0}
     for row in session.execute(
         select(models.SleepRecord).where(models.SleepRecord.sync_rev == 0)
     ).scalars():
@@ -308,6 +356,15 @@ def backfill_missing(session: Session) -> dict[str, int]:
     ).scalars():
         stamp_row(session, int(row.user_id), "meal_checks", row)
         counts["meal_checks"] += 1
+    for row in session.execute(
+        select(models.AdvicePlan).where(
+            models.AdvicePlan.sync_rev == 0,
+            models.AdvicePlan.is_active.is_(True),
+            models.AdvicePlan.deleted_at.is_(None),
+        )
+    ).scalars():
+        stamp_row(session, int(row.user_id), "advice_plans", row)
+        counts["advice_plans"] += 1
     for user in session.execute(select(models.User)).scalars():
         exists = session.execute(
             select(models.SyncSettings.id).where(models.SyncSettings.user_id == user.id)
@@ -375,6 +432,8 @@ def apply_rows(
             existing = _find_record(session, user.id, cid, payload)
         elif table == "meal_checks":
             existing = _find_meal(session, user.id, cid, payload)
+        elif table == "advice_plans":
+            existing = _find_plan(session, user.id, cid)
         else:
             existing = session.execute(
                 select(models.SyncSettings).where(models.SyncSettings.user_id == user.id)
@@ -389,6 +448,8 @@ def apply_rows(
             if existing is None:
                 existing = _new_stub(session, user.id, table, cid)
             existing.deleted_at = deleted
+            if table == "advice_plans":
+                existing.is_active = False
             existing.sync_updated_at = utc_iso_ms(incoming)
             rev = _append_log(session, user.id, table, cid, "delete")
         else:
@@ -396,6 +457,17 @@ def apply_rows(
                 existing = _new_stub(session, user.id, table, cid)
             _apply_payload(table, existing, payload)
             existing.deleted_at = None
+            if table == "advice_plans":
+                # 方案是"每用户一份活跃快照"：落地的这份变活跃，其余置非活跃。
+                for other in session.execute(
+                    select(models.AdvicePlan).where(
+                        models.AdvicePlan.user_id == user.id,
+                        models.AdvicePlan.is_active.is_(True),
+                        models.AdvicePlan.id != existing.id,
+                    )
+                ).scalars():
+                    other.is_active = False
+                existing.is_active = True
             existing.sync_updated_at = utc_iso_ms(incoming)
             rev = _append_log(session, user.id, table, cid, "upsert")
         existing.client_row_id = cid
@@ -426,6 +498,20 @@ def _new_stub(session: Session, user_id: int, table: str, cid: str) -> Any:
             eaten=False,
             refused=False,
         )
+    elif table == "advice_plans":
+        stub = models.AdvicePlan(
+            user_id=user_id,
+            client_row_id=cid,
+            is_active=False,
+            mode="slow",
+            days=1,
+            start_date="1970-01-01",
+            target_date="1970-01-01",
+            target_sleep_time="00:00",
+            target_wake_time="00:00",
+            engine="stub",
+            payload="{}",
+        )
     else:
         stub = models.SyncSettings(user_id=user_id, client_row_id=cid)
     session.add(stub)
@@ -449,8 +535,36 @@ def _apply_payload(table: str, row: Any, payload: dict) -> None:
         row.meal = str(payload.get("meal"))
         row.eaten = bool(payload.get("eaten"))
         row.refused = bool(payload.get("refused"))
+    elif table == "advice_plans":
+        row.mode = str(payload.get("mode") or "slow")
+        row.days = int(payload.get("days") or 1)
+        row.start_date = str(payload.get("start_date"))
+        row.target_date = str(payload.get("target_date") or payload.get("start_date"))
+        row.target_sleep_time = str(payload.get("target_sleep_time") or "00:00")
+        row.target_wake_time = str(payload.get("target_wake_time") or "00:00")
+        row.engine = str(payload.get("engine") or "sync")
+        row.replans = int(payload.get("replans") or 0)
+        row.postponed_days = int(payload.get("postponed_days") or 0)
+        row.payload = json.dumps(payload.get("plan") or {}, ensure_ascii=False, default=str)
     else:
         row.payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _find_plan(session: Session, user_id: int, cid: str) -> models.AdvicePlan | None:
+    """方案按"每用户一份活跃快照"处理：先按 client_row_id 找，再退回当前活跃行。"""
+    row = session.execute(
+        select(models.AdvicePlan).where(
+            models.AdvicePlan.user_id == user_id,
+            models.AdvicePlan.client_row_id == cid,
+        )
+    ).scalars().first()
+    if row is not None:
+        return row
+    return session.execute(
+        select(models.AdvicePlan)
+        .where(models.AdvicePlan.user_id == user_id, models.AdvicePlan.is_active.is_(True))
+        .order_by(models.AdvicePlan.id.desc())
+    ).scalars().first()
 
 
 def _current_client_id(session: Session, user_id: int, table: str, cid: str) -> str:
@@ -491,11 +605,34 @@ def pull_rows(
     if settings_row is not None:
         payload = json.loads(settings_row.payload) if settings_row.payload else {}
         gathered.append((settings_row.sync_rev, _row_payload("user_settings", settings_row, payload)))
+    for row in session.execute(
+        select(models.AdvicePlan)
+        .where(models.AdvicePlan.user_id == user.id, models.AdvicePlan.sync_rev > cursor)
+        .order_by(models.AdvicePlan.sync_rev)
+        .limit(limit)
+    ).scalars():
+        gathered.append((row.sync_rev, _row_payload("advice_plans", row, plan_payload(row))))
     gathered.sort(key=lambda item: item[0])
     page = gathered[:limit]
     new_cursor = page[-1][0] if page else cursor
     has_more = len(gathered) > limit
     return [item[1] for item in page], new_cursor, has_more
+
+
+def active_plan_row(session: Session, user: models.User) -> dict[str, Any] | None:
+    """当前活跃方案的一行（给桌面端在绑定阶段做"用哪份方案"的选择）。"""
+    row = session.execute(
+        select(models.AdvicePlan)
+        .where(
+            models.AdvicePlan.user_id == user.id,
+            models.AdvicePlan.is_active.is_(True),
+            models.AdvicePlan.deleted_at.is_(None),
+        )
+        .order_by(models.AdvicePlan.id.desc())
+    ).scalars().first()
+    if row is None:
+        return None
+    return _row_payload("advice_plans", row, plan_payload(row))
 
 
 def _row_payload(table: str, row: Any, payload: dict[str, Any]) -> dict[str, Any]:

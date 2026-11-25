@@ -214,6 +214,12 @@ class AdvicePlan(Base, TimestampMixin):
     payload: Mapped[str] = mapped_column(Text, nullable=False)
     replans: Mapped[int] = mapped_column(Integer, default=0, nullable=False)          # 重算次数
     postponed_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)   # 累计顺延天数
+    # 云同步列：只同步"当前活跃"的那一份方案（换方案时旧的置 False，不参与同步）。
+    # 列含义同 sleep_records；deleted_at 非空表示这份方案在云端被移除。
+    client_row_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    sync_updated_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sync_rev: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="advice_plans")
 

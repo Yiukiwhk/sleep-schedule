@@ -312,3 +312,67 @@ def test_meal_check_travels_with_its_record(server):
     assert "report" in pushed[1], pushed
     pulled = _run_client(server, "meal-b", [{"op": "run"}, {"op": "count"}])
     assert pulled[1]["meals"] >= 1, [pushed, pulled]
+
+
+@pytest.mark.desktop
+def test_plan_travels_and_user_picks_local_or_cloud(server):
+    user = "plan-user"
+    # A creates the cloud plan and uploads it.
+    created = _run_client(
+        server,
+        "plan-a",
+        [
+            _bind(server, create=True, user=user),
+            {"op": "save_plan", "sleep": "23:00", "wake": "07:00", "days": 21},
+            {"op": "run"},
+            {"op": "plan"},
+        ],
+    )
+    assert "error" not in created[0], created
+    assert created[1]["plan_id"] > 0
+    assert created[3]["plan"]["available"] is True
+    assert created[3]["plan"]["target_sleep_time"] == "23:00"
+
+    # B already has its own plan before it binds: the two differ, so the app has
+    # to ask which one to keep.
+    conflict = _run_client(
+        server,
+        "plan-b",
+        [
+            {"op": "save_plan", "sleep": "00:30", "wake": "08:30", "days": 30},
+            _bind(server, user=user),
+            {"op": "plan_state"},
+        ],
+    )
+    state = conflict[2]["plan_state"]
+    assert state["needs_choice"] is True, state
+    assert state["local"]["target_sleep_time"] == "00:30"
+    assert state["cloud"]["target_sleep_time"] == "23:00"
+
+    # "use the cloud plan": the local row is replaced by the cloud one.
+    chosen = _run_client(server, "plan-b", [{"op": "choose_plan", "choice": "cloud"}, {"op": "plan"}])
+    assert chosen[1]["plan"]["target_sleep_time"] == "23:00"
+    assert chosen[1]["plan"]["days"] == 21
+
+    # A machine that only pulls sees the same plan, so plans really do sync.
+    pulled = _run_client(
+        server,
+        "plan-c",
+        [_bind(server, user=user), {"op": "run"}, {"op": "plan"}],
+    )
+    assert pulled[2]["plan"]["target_sleep_time"] == "23:00"
+
+    # "use the local plan" wins over the cloud copy on the next push.
+    local_win = _run_client(
+        server,
+        "plan-b",
+        [
+            {"op": "save_plan", "sleep": "22:00", "wake": "06:00", "days": 14},
+            {"op": "plan_state"},
+            {"op": "choose_plan", "choice": "local"},
+        ],
+    )
+    assert local_win[1]["plan_state"]["needs_choice"] is True
+    after = _run_client(server, "plan-c", [{"op": "run"}, {"op": "plan"}])
+    assert after[1]["plan"]["target_sleep_time"] == "22:00"
+

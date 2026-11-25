@@ -262,6 +262,46 @@ def _client(payload: dict) -> int:
                     )
                     session.commit()
                 results.append({"op": name, "date": op["date"]})
+            elif name == "save_plan":
+                from app.services.advice_plan import save_plan  # noqa: PLC0415
+
+                user = app_desktop.ensure_local_user()
+                today = datetime.now().date()
+                plan_payload = {
+                    "mode": "slow",
+                    "days": int(op.get("days", 21)),
+                    "engine": "test",
+                    "plan_meta": {
+                        "start_date": today.isoformat(),
+                        "target_date": (today + timedelta(days=int(op.get("days", 21)))).isoformat(),
+                    },
+                    "target": {
+                        "sleep_time": op["sleep"],
+                        "wake_time": op["wake"],
+                    },
+                    "days_plan": [],
+                }
+                plan_id = save_plan(db, int(user.id), plan_payload)
+                results.append({"op": name, "plan_id": plan_id})
+            elif name == "plan":
+                with db.SessionLocal() as session:
+                    user = session.query(models.User).order_by(models.User.id).first()
+                    row = sync.active_plan(session, user.id, models)
+                    results.append(
+                        {
+                            "op": name,
+                            "plan": sync.plan_summary(row),
+                        }
+                    )
+            elif name == "plan_state":
+                results.append({"op": name, "plan_state": sync.plan_state(paths)})
+            elif name == "choose_plan":
+                results.append(
+                    {
+                        "op": name,
+                        "state": sync.choose_plan(paths, op["choice"]),
+                    }
+                )
             else:  # pragma: no cover - guard
                 raise SystemExit(f"unknown op: {name}")
         except sync.SyncError as exc:

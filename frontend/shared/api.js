@@ -189,6 +189,8 @@ export const syncApi = {
   create: (payload) => api.post("/desktop/sync/create", payload),
   run: () => api.post("/desktop/sync/run"),
   unbind: () => api.post("/desktop/sync/unbind"),
+  plan: () => api.get("/desktop/sync/plan"),
+  choosePlan: (choice) => api.post("/desktop/sync/plan", { choice }),
 };
 
 /* --------------------------- 管理端接口 --------------------------- */

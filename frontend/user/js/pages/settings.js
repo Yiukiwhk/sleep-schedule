@@ -316,7 +316,33 @@ async function wipeLocalData(root, ctx) {
   }
 }
 
-function syncCardHtml(info) {
+function planLine(summary) {
+  if (!summary || !summary.available) return escapeHtml(t("settings.syncPlanNone"));
+  return escapeHtml(
+    t("settings.syncPlanSummary", {
+      start: summary.start_date || "-",
+      sleep: summary.target_sleep_time || "-",
+      wake: summary.target_wake_time || "-",
+      days: summary.days ?? 0,
+    })
+  );
+}
+
+function planChoiceHtml(plan) {
+  if (!plan || !plan.needs_choice) return "";
+  return `
+      <div class="field" id="sync-plan-choose">
+        <label>${escapeHtml(t("settings.syncPlanChoice"))}</label>
+        <span class="tiny muted">${escapeHtml(t("settings.syncPlanLocal"))}: ${planLine(plan.local)}</span>
+        <span class="tiny muted">${escapeHtml(t("settings.syncPlanCloud"))}: ${planLine(plan.cloud)}</span>
+        <div class="row-wrap">
+          <button class="btn btn-primary" id="sync-plan-local">${escapeHtml(t("settings.syncPlanLocal"))}</button>
+          <button class="btn" id="sync-plan-cloud">${escapeHtml(t("settings.syncPlanCloud"))}</button>
+        </div>
+      </div>`;
+}
+
+function syncCardHtml(info, plan) {
   if (!info || !info.bound) {
     return `
       <span class="tiny muted">${escapeHtml(t("settings.syncHint"))}</span>
@@ -356,6 +382,7 @@ function syncCardHtml(info) {
         <button class="btn btn-primary" id="sync-now">${escapeHtml(t("settings.syncNow"))}</button>
         <button class="btn" id="sync-unbind">${escapeHtml(t("settings.syncUnbind"))}</button>
       </div>
+      ${planChoiceHtml(plan)}
       <div class="form-error" id="sync-error" hidden></div>`;
 }
 
@@ -363,12 +390,20 @@ async function loadSyncCard(root, ctx) {
   const box = qs("#sync-card", root);
   if (!box) return;
   let info = null;
+  let plan = null;
   try {
     info = await syncApi.state();
   } catch (err) {
     info = null;
   }
-  box.innerHTML = syncCardHtml(info);
+  if (info && info.bound) {
+    try {
+      plan = await syncApi.plan();
+    } catch (err) {
+      plan = null;
+    }
+  }
+  box.innerHTML = syncCardHtml(info, plan);
 
   const fail = (err) => {
     const target = qs("#sync-error", box);
@@ -428,6 +463,30 @@ async function loadSyncCard(root, ctx) {
     busy(true);
     try {
       await finish(await syncApi.run());
+    } catch (err) {
+      busy(false);
+      fail(err);
+    }
+  });
+
+  qs("#sync-plan-local", box)?.addEventListener("click", async () => {
+    busy(true);
+    try {
+      await syncApi.choosePlan("local");
+      toastOk(t("settings.syncPlanDone"));
+      await loadSyncCard(root, ctx);
+    } catch (err) {
+      busy(false);
+      fail(err);
+    }
+  });
+
+  qs("#sync-plan-cloud", box)?.addEventListener("click", async () => {
+    busy(true);
+    try {
+      await syncApi.choosePlan("cloud");
+      toastOk(t("settings.syncPlanDone"));
+      await loadSyncCard(root, ctx);
     } catch (err) {
       busy(false);
       fail(err);

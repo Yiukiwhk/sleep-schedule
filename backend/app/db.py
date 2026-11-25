@@ -140,11 +140,11 @@ def init_db() -> None:
 
 
 def _migrate_sync_columns() -> None:
-    """给同步用的两张表补 client_row_id / sync_updated_at / sync_rev / deleted_at。
+    """给同步用的三张表补 client_row_id / sync_updated_at / sync_rev / deleted_at。
 
     create_all() 会建新表（sync_devices / sync_log / sync_settings），但不会给
-    已经存在的 sleep_records、meal_checks 加列。老库的行没有行标识：用随机
-    UUID 回填 client_row_id（此后永不变），sync_updated_at 记当前时间，
+    已经存在的 sleep_records、meal_checks、advice_plans 加列。老库的行没有行标识：
+    用随机 UUID 回填 client_row_id（此后永不变），sync_updated_at 记当前时间，
     sync_rev 记 0（表示"还没有推送过"）。
     """
     from datetime import datetime, timezone
@@ -159,7 +159,7 @@ def _migrate_sync_columns() -> None:
         ("sync_rev", "INTEGER NOT NULL DEFAULT 0"),
         ("deleted_at", "DATETIME"),
     )
-    for table in ("sleep_records", "meal_checks"):
+    for table in ("sleep_records", "meal_checks", "advice_plans"):
         with engine.begin() as conn:
             rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
             if not rows:
