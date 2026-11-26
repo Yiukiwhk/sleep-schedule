@@ -4,6 +4,19 @@
 [`docs/DESKTOP.md`](DESKTOP.md) 第 10、13 节；桌面端用 `deploy\publish_desktop.ps1` 发布到
 `https://yiuki.me/desktop/`，GitHub Release 的附件与此处列出的文件一致。
 
+## v0.2.1（2026-11-26）
+
+- **同步后自动刷新目标作息**：绑定 / 立即同步 / 选择方案之后，页面会重新拉一次 `/api/auth/me` 并重渲染，
+  「目标作息」输入框立刻显示云端同步下来的时间，不需要再手动刷新整页。
+- **显示名改为 `Sleep schedule`**：窗口标题、页头、浏览器标题、安装器显示名都改成 `Sleep schedule`；
+  exe、安装包与安装目录仍是 `SleepSchedule`（文件名不加空格）。
+- 数据目录仍是 `%PROGRAMDATA%\YiukiSleep` / `%LOCALAPPDATA%\YiukiSleep`，从 0.2.0 升级不需要迁移。
+
+| 文件 | 大小（字节） | SHA-256 |
+| --- | --- | --- |
+| `SleepSchedule-setup-0.2.1.exe` | 72,013,029 | `b1006bae0fd2e5e4e81982b34d2baa0d8045a08584f525b36061750fef010bd9` |
+| `SleepSchedule-portable-0.2.1.zip` | 96,847,736 | `467b0a5215b1c78c8f7707b6fad0c1d2bef40243243de1f9290559d20c8e4047` |
+
 ## v0.2.0（2026-11-26）
 
 第一个公开版本：网页版（`https://yiuki.me/user/`）与 Windows 桌面版同源发布。
@@ -49,7 +62,7 @@ Get-FileHash .\SleepSchedule-setup-0.2.0.exe -Algorithm SHA256
   `AttributeError: 'NoneType' object has no attribute 'isatty'`
 - 同步补 rev 回填与网页侧写入推进（否则旧账号同步数量一直是 0）；删除改为墓碑
 - 方案也能同步；云同步后若方案或目标作息不一致，弹**一个**窗口让用户选云端/本机
-- 应用改名 `sleepschedule`：exe、安装目录、窗口标题、页头都改；数据目录名保留 `YiukiSleep`，升级不丢数据
+- 应用改名 `Sleep schedule`：exe、安装目录、窗口标题、页头都改；数据目录名保留 `YiukiSleep`，升级不丢数据
 - 桌面窗口不再显示 ICP/公安备案号（网页版照旧显示）
 - 修建议页「一天调整/多天调整」分段控件被拉伸、右缘与按钮不对齐
 

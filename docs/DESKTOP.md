@@ -685,7 +685,7 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 
 ### 0.2.0（2026-11-26）
 
-- **应用改名**：显示名 `sleepschedule`（窗口标题、页头 `app.name`、`app.userTitle`、`app.adminTitle`、浏览器标题）；
+- **应用改名**：显示名 `Sleep schedule`（窗口标题、页头 `app.name`、`app.userTitle`、`app.adminTitle`、浏览器标题）；
   exe 与安装包改为 `SleepSchedule.exe` / `SleepSchedule-setup-x.y.z.exe`，安装目录 `%ProgramFiles%\SleepSchedule`。
   **数据目录名不变**：`%PROGRAMDATA%\YiukiSleep` 与 `%LOCALAPPDATA%\YiukiSleep` 保留原名，这样 0.1.x 的用户升级后
   记录、方案与设备绑定都还在（`runtime.APP_FOLDER` 未改）。
@@ -697,4 +697,16 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
   默认 `stretch` 会把分段控件拉满整行，右侧看上去比「多天调整」按钮多出一段空白。
 - 发布物：`dist\desktop\SleepSchedule\`、`dist\desktop\SleepSchedule-setup-0.2.0.exe`、`latest.json`；
   桌面 `SleepSchedule-setup-0.2.0.exe` 与 `SleepSchedule-portable-0.2.0.zip`；GitHub 仓库打 `v0.2.0` tag 并写 release notes。
+
+### 0.2.1（2026-11-26）
+
+- **同步后自动刷新目标作息**：`GET /api/sync/settings` 拉到的云端 `user_settings` 会写进本机 `User` 行，
+  但页面里的输入框读的是 `ctx.state.user`（登录时的旧对象），所以同步后「目标作息」仍显示旧时间，只有整页刷新才更新。
+  修法：`frontend/user/js/pages/settings.js` 新增 `refreshUser(ctx)`（重新 `GET /api/auth/me` → `ctx.updateUser`），
+  `loadSyncCard()` 的 `finish()` 与 `askPlanChoice()` 成功后都先 `await refreshUser(ctx)`，再 `ctx.reload()` 重渲染整页
+  （`ctx.reload` 即 `main.js` 的 `renderRoute()`），因此绑定、立即同步、选择方案三条路径都会自动带出新时间。
+- **显示名改为 `Sleep schedule`**：`sleepschedule` 作为产品名不够正式。i18n 的 `app.name` / `app.userTitle` /
+  `app.adminTitle`、`index.html` 的 `<title>`、pywebview 窗口标题、安装器 `MyAppName`、FastAPI `title`、
+  `APP_NAME`、README 全部改成 `Sleep schedule`；exe / 安装包 / 安装目录名仍是 `SleepSchedule*`（不加空格）。
+- 版本 `0.2.1`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步。
 

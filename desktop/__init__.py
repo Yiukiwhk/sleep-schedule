@@ -1,4 +1,4 @@
-"""Desktop shell for sleepschedule (pywebview window around a local uvicorn server).
+"""Desktop shell for Sleep schedule (pywebview window around a local uvicorn server).
 
 Layout:
   desktop/runtime.py   paths, port, token, health polling (stdlib only)
@@ -10,6 +10,6 @@ Layout:
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = ["__version__"]

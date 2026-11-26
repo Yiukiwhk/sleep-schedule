@@ -12,7 +12,7 @@
   #define MyVersion "0.1.0"
 #endif
 
-#define MyAppName "sleepschedule"
+#define MyAppName "Sleep schedule"
 #define MyAppExeName "SleepSchedule.exe"
 
 [Setup]

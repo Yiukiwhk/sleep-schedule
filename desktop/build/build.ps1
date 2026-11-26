@@ -91,7 +91,7 @@ if ($installerFile) { $artifact = $installerFile } else { $artifact = Get-Item "
 $manifest = [ordered]@{
     version       = $Version
     min_supported = "0.1.0"
-    notes         = "sleepschedule $Version"
+    notes         = "Sleep schedule $Version"
     url           = "https://yiuki.me/desktop/$($artifact.Name)"
     sha256        = (Get-FileHash -Path $artifact.FullName -Algorithm SHA256).Hash.ToLower()
     size          = $artifact.Length

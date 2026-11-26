@@ -30,7 +30,7 @@ def _env_bool(name: str, default: bool) -> bool:
 class Settings:
     """运行期配置对象（单例 settings）。"""
 
-    APP_NAME: str = "sleepschedule"
+    APP_NAME: str = "Sleep schedule"
 
     # ---------- 运行模式 ----------
     # server : 线上/局域网多用户（登录、管理后台、写入冷却、6 个月保留）

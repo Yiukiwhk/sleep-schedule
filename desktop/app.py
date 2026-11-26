@@ -35,7 +35,7 @@ if __package__ in (None, ""):  # launched as a plain script (python desktop/app.
 
 from desktop import runtime  # noqa: E402
 
-APP_TITLE = "sleepschedule"
+APP_TITLE = "Sleep schedule"
 
 
 def _say(text: str) -> None:
@@ -63,7 +63,7 @@ def _ensure_std_streams() -> None:
 # Argument parsing / backend import
 # --------------------------------------------------------------------------- #
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="SleepSchedule", description="sleepschedule desktop client")
+    parser = argparse.ArgumentParser(prog="SleepSchedule", description="Sleep schedule desktop client")
     parser.add_argument("--smoke", action="store_true", help="run the self-check and exit")
     parser.add_argument("--check-gui", action="store_true", help="check pywebview/.NET and exit")
     parser.add_argument("--report", default=None, help="write the --smoke/--check-gui report to this file")

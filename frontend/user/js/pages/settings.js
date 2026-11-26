@@ -357,6 +357,17 @@ function planChoiceBody(plan) {
       <p class="tiny muted" style="margin-top:10px">${escapeHtml(t("settings.syncChoiceHint"))}</p>`;
 }
 
+// 云同步可能把云端的目标作息/语言等写进本机 User，但 ctx.state.user 还是登录时的旧值，
+// 所以同步结束后重新拉一次 /api/auth/me 再整页重渲染，左侧「目标作息」输入框才会显示新时间。
+async function refreshUser(ctx) {
+  try {
+    const user = await authApi.me();
+    if (user) ctx.updateUser?.(user);
+  } catch (err) {
+    // 拉不到就保留旧值，不要因此让同步结果显示成失败。
+  }
+}
+
 async function askPlanChoice(root, ctx, plan) {
   const useCloud = await confirmDialog({
     title: t("settings.syncChoiceTitle"),
@@ -373,14 +384,17 @@ async function askPlanChoice(root, ctx, plan) {
   try {
     await syncApi.choosePlan(useCloud ? "cloud" : "local");
     toastOk(t("settings.syncPlanDone"));
+    await refreshUser(ctx);
+    if (ctx.reload) ctx.reload();
+    else await loadSyncCard(root, ctx);
   } catch (err) {
     const target = box ? qs("#sync-error", box) : null;
     if (target) {
       target.hidden = false;
       target.textContent = err instanceof Error ? err.message : String(err);
     }
+    await loadSyncCard(root, ctx);
   }
-  await loadSyncCard(root, ctx);
 }
 
 function syncCardHtml(info, plan) {
@@ -464,7 +478,10 @@ async function loadSyncCard(root, ctx) {
   });
   const finish = async (result) => {
     toastOk(t("settings.syncDone", { pushed: result?.pushed ?? 0, pulled: result?.pulled ?? 0 }));
-    await loadSyncCard(root, ctx);
+    // 同步会把云端的目标作息/方案写到本机，整页重渲染后左侧输入框才是新值。
+    await refreshUser(ctx);
+    if (ctx.reload) ctx.reload();
+    else await loadSyncCard(root, ctx);
   };
 
   qs("#sync-bind", box)?.addEventListener("click", async () => {

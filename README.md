@@ -100,7 +100,7 @@ Windows 也可直接运行 `start.bat`（等价于用虚拟环境解释器启动
 
 ## 桌面版（Windows，实验性）
 
-0.2.0 起应用显示名是 **sleepschedule**（exe 为 `SleepSchedule.exe`，安装目录 `%ProgramFiles%\SleepSchedule`）；
+0.2.0 起应用显示名是 **Sleep schedule**（exe 为 `SleepSchedule.exe`，安装目录 `%ProgramFiles%\SleepSchedule`）；
 数据目录名仍是 `YiukiSleep`，老版本升级后记录、方案与设备绑定都还在。桌面版窗口里不显示 ICP/公安备案号，
 网页版照旧显示。
 
