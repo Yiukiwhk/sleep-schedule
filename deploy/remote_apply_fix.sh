@@ -667,7 +667,7 @@ grep_file "i18n.js: both hint texts exist" "$WEBROOT/shared/i18n.js" 'advice.anc
 
 echo "== 4am. the cloud sync API that desktop builds call is deployed =="
 # 桌面端绑定云端账号时调用 /api/sync/*；缺一个模块就 404，桌面端只会看到"绑定失败"。
-grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.2.1"'
+grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.2.2"'
 grep_file "main: desktop routers are conditional" "$APP_DIR/backend/app/main.py" 'include_desktop=settings.DESKTOP'
 grep_file "local guard: token header checked" "$APP_DIR/backend/app/core/local_guard.py" 'X-Local-Token'
 grep_file "sync engine: lww compare" "$APP_DIR/backend/app/services/sync_engine.py" 'def is_newer'
@@ -682,6 +682,8 @@ grep_file "sync engine: schema columns migrated" "$APP_DIR/backend/app/db.py" '_
 grep_file "sync api: device tokens" "$APP_DIR/backend/app/api/sync_api.py" 'X-Device-Token'
 grep_file "sync api: push endpoint" "$APP_DIR/backend/app/api/sync_api.py" 'def sync_push('
 grep_file "sync api: plan endpoint" "$APP_DIR/backend/app/api/sync_api.py" '@router.get("/plan")'
+grep_file "advice plan: keep remembers the deviation" "$APP_DIR/backend/app/services/advice_plan.py" 'deviation_ack'
+grep_file "advice page: acknowledged deviation is skipped" "$WEBROOT/user/js/pages/advice.js" 'deviation.acked'
 grep_file "sync api: desktop-only account creation" "$APP_DIR/backend/app/api/sync_api.py" '"X-Client"'
 # POST without the desktop header must be refused before anything is created.
 acct_code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST \

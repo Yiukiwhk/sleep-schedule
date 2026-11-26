@@ -38,6 +38,9 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 #endif
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Same art as the web favicon (desktop/build/app.ico is rendered from
+; frontend/user/favicon.svg), so the wizard matches the exe and the shortcuts.
+SetupIconFile=app.ico
 CloseApplications=yes
 RestartApplications=no
 PrivilegesRequired=admin
@@ -68,9 +71,9 @@ Name: "{commonappdata}\YiukiSleep\backup"; Permissions: users-modify
 Name: "{commonappdata}\YiukiSleep\models"; Permissions: users-modify
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent

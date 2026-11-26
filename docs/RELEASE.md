@@ -4,6 +4,21 @@
 [`docs/DESKTOP.md`](DESKTOP.md) 第 10、13 节；桌面端用 `deploy\publish_desktop.ps1` 发布到
 `https://yiuki.me/desktop/`，GitHub Release 的附件与此处列出的文件一致。
 
+## v0.2.2（2026-11-26）
+
+- **应用图标换成网页 favicon**：窗口、任务栏、开始菜单、桌面快捷方式与安装向导统一使用网页版那枚
+  蓝底月牙图标（`desktop/build/app.ico`，由 `frontend/user/favicon.svg` 渲染，16–256 px 共 7 档）。
+- **「先不改，继续原计划」只问一次**：方案可能无法完成时弹出的偏离提示，选「继续原计划」后会把这次
+  偏离（起床日 + 分钟数）记进方案，同一晚、同样幅度再进页面不再追问；换一晚或偏差变了仍会正常询问。
+  这次确认也会随方案同步到其它设备。
+- **更新清单不再带 BOM**：`latest.json` 改为无 BOM 的 UTF-8 写出，客户端解析同时兼容带 BOM 的旧清单，
+  避免「检查更新」静默失败。
+
+| 文件 | 大小（字节） | SHA-256 |
+| --- | --- | --- |
+| `SleepSchedule-setup-0.2.2.exe` | 72,009,629 | `1699864891e41aafa521fc93e5fe0ee4b4f16b9f955e0fccf95de5d3b7e93f22` |
+| `SleepSchedule-portable-0.2.2.zip` | 96,810,120 | `883b78eca9a7dc526c5bf07ce473ccbd3f3963fcc9c5b7e7fc6e3d50a2ebd1eb` |
+
 ## v0.2.1（2026-11-26）
 
 已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.1>

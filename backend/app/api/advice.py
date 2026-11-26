@@ -219,7 +219,10 @@ def advice_replan(
     db.expire_all()
     state = _state(db, user, today=today, with_auto=False)
     state["strategy"] = result.get("strategy")
-    state["saved"] = payload.strategy != "keep"
+    # keep 也会落库（把这次偏离记成已确认，见 plan_service._remember_deviation_ack），
+    # 所以三种策略都算保存成功。
+    state["saved"] = True
+    state["deviation_ack_saved"] = bool(result.get("deviation_ack_saved"))
     return state
 
 

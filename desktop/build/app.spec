@@ -1,9 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the sleepschedule desktop shell (onedir).
+"""PyInstaller spec for the Sleep schedule desktop shell (onedir).
 
 Build:  pyinstaller --noconfirm --clean desktop/build/app.spec --distpath dist/desktop --workpath build/pyinstaller
 The bundle contains the shell (desktop/app.py), the backend package (backend/app)
 and the static frontend (frontend/); user data never lives in the bundle.
+
+desktop/build/app.ico is rendered from frontend/user/favicon.svg (the web favicon),
+so the exe, shortcuts and the setup wizard all show the same icon.
 """
 
 import importlib.util
@@ -109,7 +112,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=str(ROOT / "desktop" / "build" / "app.ico"),
 )
 
 coll = COLLECT(

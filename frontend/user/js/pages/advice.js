@@ -1468,6 +1468,9 @@ async function askDeviation(root) {
   if (view.deviating) return;
   const deviation = view.state?.deviation;
   if (!deviation || deviation.level !== "ask") return;
+  // 上一晚点过「先不改，继续原计划」：同一次偏离（同一晚、同样分钟数）已经确认过，
+  // 再进页面不要再问一遍。换一晚或偏差变了，后端会把 acked 置回 false，继续正常询问。
+  if (deviation.acked) return;
   view.deviating = true;
 
   const minutes = deviation.minutes;

@@ -710,3 +710,18 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
   `APP_NAME`、README 全部改成 `Sleep schedule`；exe / 安装包 / 安装目录名仍是 `SleepSchedule*`（不加空格）。
 - 版本 `0.2.1`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步。
 
+
+### 0.2.2（2026-11-26）
+
+- **应用图标换成网页 favicon**：`frontend/user/favicon.svg`（蓝底 + 月牙 + 两颗星）用 Edge headless
+  以 256×256 透明背景栅格化，再由 Pillow 生成 7 档尺寸的 `desktop/build/app.ico`（16/24/32/48/64/128/256）。
+  `desktop/build/app.spec` 用它作为 exe 图标，`desktop/build/installer.iss` 用 `SetupIconFile=app.ico`
+  并给组内快捷方式 / 可选桌面图标指定 `IconFilename`，所以窗口、任务栏、开始菜单与安装向导是同一枚图标。
+- **「先不改，继续原计划」只问一次**：`services/advice_plan.py` 的 `deviation()` 增加 `acked`，
+  `replan(strategy="keep")` 不再空返回，而是调用 `_remember_deviation_ack()` 把
+  `deviation_ack = {"date": 起床日, "minutes": 偏差}` 写进方案 payload（并 `stamp_row` 进同步游标，
+  另一台设备也能拿到这次确认）。同一晚、同样幅度再次进页面时 `acked=True`，前端
+  `askDeviation()` 直接 return；换一晚或幅度变了 ack 对不上，仍然正常询问。
+- `POST /api/advice/replan` 现在三种策略都返回 `saved: true`，并额外返回 `deviation_ack_saved`。
+- 版本 `0.2.2`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh`
+  的 4am grep 同步，另加 `deviation_ack`（后端）与 `deviation.acked`（前端）两条自证。

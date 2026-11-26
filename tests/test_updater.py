@@ -18,12 +18,12 @@ from desktop import updater  # noqa: E402
 pytestmark = pytest.mark.desktop
 
 
-def _serve(payload: dict):
+def _serve(payload: dict, *, raw: bytes | None = None):
     """Start a throwaway HTTP server that answers every GET with the payload."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802 - http.server API
-            body = json.dumps(payload).encode("utf-8")
+            body = raw if raw is not None else json.dumps(payload).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -97,3 +97,18 @@ def test_check_rejects_manifest_without_version():
         server.shutdown()
     assert not info.ok
     assert "version" in info.error
+
+
+def test_manifest_with_utf8_bom_is_still_readable():
+    """回归：build.ps1 曾用 `Set-Content -Encoding utf8` 写出带 BOM 的 latest.json，
+    json.loads 不认 BOM，更新检查就会静默失败。发布端现在写无 BOM，客户端也兜住。"""
+    payload = {"version": "0.3.0", "url": "https://yiuki.me/desktop/x.exe", "sha256": "0" * 64}
+    body = b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8")
+    server, url = _serve({}, raw=body)
+    try:
+        info = updater.check("0.2.2", url=url)
+    finally:
+        server.shutdown()
+    assert info.ok, info.error
+    assert info.latest == "0.3.0"
+    assert info.update_available

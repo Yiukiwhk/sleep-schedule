@@ -74,7 +74,9 @@ def fetch_manifest(url: str = DEFAULT_MANIFEST_URL, *, timeout: float = CHECK_TI
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed https URL
         payload = response.read(64 * 1024)
-    manifest = json.loads(payload.decode("utf-8"))
+    # utf-8-sig：发布脚本可能带 BOM（Windows PowerShell 的 -Encoding utf8 会写 BOM），
+    # json.loads 不认 BOM，先剥掉再解析。
+    manifest = json.loads(payload.decode("utf-8-sig"))
     if not isinstance(manifest, dict):
         raise ValueError("manifest is not an object")
     return manifest

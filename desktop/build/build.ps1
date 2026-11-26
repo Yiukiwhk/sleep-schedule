@@ -96,5 +96,12 @@ $manifest = [ordered]@{
     sha256        = (Get-FileHash -Path $artifact.FullName -Algorithm SHA256).Hash.ToLower()
     size          = $artifact.Length
 }
-$manifest | ConvertTo-Json | Set-Content -Path "dist\desktop\latest.json" -Encoding utf8
+# 写成无 BOM 的 UTF-8：Windows PowerShell 的 `Set-Content -Encoding utf8` 会加 BOM，
+# 客户端用 json.loads 解析会直接报错（更新检查就此静默失效）。
+$manifestJson = $manifest | ConvertTo-Json
+[System.IO.File]::WriteAllText(
+    (Join-Path (Resolve-Path "dist\desktop").Path "latest.json"),
+    $manifestJson,
+    (New-Object System.Text.UTF8Encoding($false))
+)
 Write-Host "artifacts in dist\desktop (latest.json written)"

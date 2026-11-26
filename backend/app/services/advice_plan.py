@@ -271,6 +271,7 @@ def deviation(payload: dict, records: list[SleepRecord], today: date) -> dict:
         "planned": None,
         "actual": None,
         "options": [],
+        "acked": False,
     }
     if latest is None:
         return result
@@ -321,6 +322,14 @@ def deviation(payload: dict, records: list[SleepRecord], today: date) -> dict:
         {"strategy": "recompute", "recommended": False, "extra_days": 0},
         {"strategy": "keep", "recommended": False, "extra_days": 0},
     ]
+    # 「先不改，继续原计划」只对**这一次**偏离生效：把当时的起床日与偏差记进
+    # 计划 payload，下次读计划时如果偏离还是同一晚、幅度也一样，就不再追问。
+    ack = payload.get("deviation_ack")
+    if isinstance(ack, dict) and ack.get("date") == result["actual"]["date"]:
+        try:
+            result["acked"] = int(ack.get("minutes") or -1) == int(magnitude)
+        except (TypeError, ValueError):      # pragma: no cover - 手改过的脏数据
+            result["acked"] = False
     return result
 
 
@@ -387,6 +396,38 @@ def _meals_enabled_from(payload: dict) -> dict[str, bool]:
     }
 
 
+def _remember_deviation_ack(plan: AdvicePlan, payload: dict, dev: dict) -> bool:
+    """把「先不改，继续原计划」写进计划 payload，同一晚的偏离就不再反复弹窗。
+
+    计划本身不变（不新建快照、不动 replans / postponed_days），只补一个
+    `deviation_ack = {"date": 起床日, "minutes": 偏差}`：`deviation()` 读到与当前
+    偏离完全一致时把 `acked` 置 True，前端据此跳过弹窗。换了一晚或幅度变了，
+    ack 对不上，仍然会正常询问。
+    """
+    actual = dev.get("actual") or {}
+    the_date = actual.get("date")
+    if not the_date:
+        return False
+    ack = {"date": the_date, "minutes": int(dev.get("minutes") or 0)}
+    if payload.get("deviation_ack") == ack:
+        return False
+    updated = dict(payload)
+    updated["deviation_ack"] = ack
+
+    def _write() -> bool:
+        with write_session() as session:
+            row = session.get(AdvicePlan, int(plan.id))
+            if row is None:      # pragma: no cover - 并发删除了快照
+                return False
+            row.payload = json.dumps(updated, ensure_ascii=False, default=str)
+            # 方案 payload 变了也要进同步游标，否则另一台设备拉不到这次确认。
+            sync_engine.stamp_row(session, int(row.user_id), "advice_plans", row)
+            session.flush()
+            return True
+
+    return run_with_retry(_write, label="ack_advice_deviation")
+
+
 def replan(db, user: User, *, strategy: str, today: date | None = None) -> dict:
     """按弹窗选择的策略重算：postpone（顺延目标日期）/ recompute（保持日期）/ keep。"""
     today = today or date.today()
@@ -396,12 +437,19 @@ def replan(db, user: User, *, strategy: str, today: date | None = None) -> dict:
         return {"strategy": strategy, "plan": None, "postponed_days": 0}
 
     if strategy == "keep":
+        # 「先不改，继续原计划」也要落库：把这次偏离记成已确认，否则用户下次进页面
+        # 还会被同一个弹窗再问一次（同一晚、同样幅度才算同一次）。
+        records = advice_service._recent_records(db, user.id)
+        dev = deviation(payload, records, today)
+        saved = _remember_deviation_ack(plan, payload, dev)
         return {
             "strategy": "keep",
             "plan": payload,
             "plan_id": plan.id,
             "replans": plan.replans,
             "postponed_days": plan.postponed_days,
+            "deviation": dev,
+            "deviation_ack_saved": saved,
         }
 
     records = advice_service._recent_records(db, user.id)

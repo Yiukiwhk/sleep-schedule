@@ -508,6 +508,57 @@ def test_plan_snapshot_deviation_and_replan(client: TestClient) -> None:
     assert kept["plan_meta"]["target_date"] == postponed["plan_meta"]["target_date"]
 
 
+def test_keep_strategy_acks_the_same_deviation(client: TestClient) -> None:
+    """「先不改，继续原计划」只对这一次偏离生效：同一晚、同样幅度不再追问。
+
+    回归：以前 keep 不落库，用户选了「继续原计划」，下次进页面还是同一个弹窗。
+    """
+    username = "ackdev"
+    user_id = _make_user(
+        username, rows=_records_pattern("01:00", "09:00"), target=("23:00", "07:00")
+    )
+    _login(client, username)
+    created = client.post("/api/advice", json={"mode": "slow", "days": 7}).json()
+
+    def shift_record(sleep_time: str, wake_time: str) -> None:
+        with SessionLocal() as session:
+            record = (
+                session.query(SleepRecord)
+                .filter(
+                    SleepRecord.user_id == user_id,
+                    SleepRecord.record_date == TODAY.isoformat(),
+                )
+                .one()
+            )
+            record.sleep_time = sleep_time
+            record.wake_time = wake_time
+            session.commit()
+
+    shift_record("03:00", "11:00")
+    state = client.get("/api/advice/plan").json()
+    assert state["deviation"]["level"] == "ask"
+    assert state["deviation"]["acked"] is False
+
+    kept = client.post("/api/advice/replan", json={"strategy": "keep"}).json()
+    assert kept["saved"] is True
+    assert kept["deviation_ack_saved"] is True
+    assert kept["deviation"]["acked"] is True
+    assert kept["plan_meta"]["target_date"] == created["plan_meta"]["target_date"]
+    assert kept["plan_meta"]["replans"] == 0
+
+    # 重新读一次计划：仍然是 ask（偏离客观存在），但已经确认过，前端不再弹窗。
+    again = client.get("/api/advice/plan").json()
+    assert again["deviation"]["level"] == "ask"
+    assert again["deviation"]["acked"] is True
+
+    # 偏差变了（多睡一小时）→ 这是新的一次偏离，不能沿用上次的确认。
+    # （幅度不同可能落在 ask 也可能落在 auto 区间，这里只关心 ack 不能命中。）
+    shift_record("04:00", "12:00")
+    changed = client.get("/api/advice/plan").json()
+    assert changed["deviation"]["level"] in ("ask", "auto")
+    assert changed["deviation"]["acked"] is False
+
+
 def test_auto_recompute_only_once_per_day(client: TestClient) -> None:
     username = "autoreplan"
     user_id = _make_user(
