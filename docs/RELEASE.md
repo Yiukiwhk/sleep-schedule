@@ -6,6 +6,8 @@
 
 ## v0.2.3（2026-11-26）
 
+已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.3>
+
 - **服务器数据库自动备份**：`deploy/backup_db.py` 每天 04:17 用 SQLite 在线备份 API 导出一份
   `/var/backups/sleep-schedule/app-<UTC 时间>.db`，校验 `PRAGMA integrity_check` 后保留最近 14 份；
   安装脚本 `deploy/install_backup.ps1`。
