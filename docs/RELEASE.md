@@ -8,6 +8,9 @@
 
 第一个公开版本：网页版（`https://yiuki.me/user/`）与 Windows 桌面版同源发布。
 
+已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.0>
+（`main` 与 `v0.2.0` tag 均已推送；安装包与免安装 zip 作为 release 附件上传）
+
 ### 桌面版（Windows 10/11 x64）
 
 - **免安装**：`SleepSchedule-portable-0.2.0.zip`（解压后双击 `SleepSchedule.exe`，
