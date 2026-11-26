@@ -6,6 +6,8 @@
 
 ## v0.2.2（2026-11-26）
 
+已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.2>
+
 - **应用图标换成网页 favicon**：窗口、任务栏、开始菜单、桌面快捷方式与安装向导统一使用网页版那枚
   蓝底月牙图标（`desktop/build/app.ico`，由 `frontend/user/favicon.svg` 渲染，16–256 px 共 7 档）。
 - **「先不改，继续原计划」只问一次**：方案可能无法完成时弹出的偏离提示，选「继续原计划」后会把这次
