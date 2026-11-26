@@ -92,12 +92,24 @@ def unprotect(blob: bytes) -> bytes:
         kernel32.LocalFree(blob_out.pbData)
 
 
+def _dpapi_available() -> bool:
+    """True on Windows, where the token is stored with DPAPI.
+
+    The shipped app is Windows-only; the Linux fallback exists so the sync
+    tests can run in CI, where DPAPI does not exist.
+    """
+    return os.name == "nt"
+
+
 def save_device_token(path: Path, payload: dict) -> None:
     """Persist the device binding (server url, username, token) encrypted."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    document = {"v": 1, "dpapi": base64.b64encode(protect(raw)).decode("ascii")}
+    if _dpapi_available():
+        document = {"v": 1, "dpapi": base64.b64encode(protect(raw)).decode("ascii")}
+    else:
+        document = {"v": 1, "plain": base64.b64encode(raw).decode("ascii")}
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(document, indent=2), encoding="utf-8")
     os.replace(tmp, path)
@@ -107,7 +119,10 @@ def load_device_token(path: Path) -> dict | None:
     """Return the stored binding, or None when absent / unreadable."""
     try:
         document = json.loads(Path(path).read_text(encoding="utf-8"))
-        raw = unprotect(base64.b64decode(document["dpapi"]))
+        if "plain" in document:
+            raw = base64.b64decode(document["plain"])
+        else:
+            raw = unprotect(base64.b64decode(document["dpapi"]))
         payload = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError, KeyError, DpapiError):
         return None

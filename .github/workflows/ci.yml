@@ -71,6 +71,7 @@ jobs:
             tests/test_importers.py \
             tests/test_updater.py \
             tests/test_desktop_runtime.py \
+            tests/test_device_token.py \
             tests/test_backup_db.py
 
       - name: 后端冒烟测试（TestClient，独立临时库）
