@@ -17,7 +17,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-APP_FOLDER = "YiukiSleep"
+APP_FOLDER = "SleepSchedule"
+# 0.2.2 及更早用 YiukiSleep 存数据；升级时一次性搬过去（见 migrate_legacy_root）。
+LEGACY_APP_FOLDER = "YiukiSleep"
 
 DEFAULT_CONFIG: dict = {
     "port": 0,              # 0 = let the OS pick a free port on every start
@@ -102,6 +104,24 @@ def app_root(
         mode = default_root_mode(exe_dir) if exe_dir else "machine"
         parent = _program_data() if mode == "machine" else _local_app_data()
     return (parent / APP_FOLDER).resolve()
+
+
+def migrate_legacy_root(root: Path) -> Path | None:
+    """把 0.2.2 及更早的 YiukiSleep 数据目录搬到新名字下（一次性、best effort）。
+
+    只有新目录里还没有 app.db、而旧目录里有的时候才搬；搬完保留旧目录不动，
+    万一拷贝中途失败，用户下次启动还能重试，也不会丢数据。
+    """
+    import shutil
+
+    root = Path(root)
+    legacy = root.parent / LEGACY_APP_FOLDER
+    if legacy == root or not (legacy / "data" / "app.db").exists():
+        return None
+    if (root / "data" / "app.db").exists():
+        return None
+    shutil.copytree(legacy, root, dirs_exist_ok=True)
+    return legacy
 
 
 def probe_writable(root: Path) -> str | None:

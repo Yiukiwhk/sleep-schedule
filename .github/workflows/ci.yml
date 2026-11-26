@@ -38,7 +38,9 @@ jobs:
           python -m pip install -r requirements.txt
           # 测试依赖：pytest + httpx（TestClient 需要；httpx2 是 starlette 1.8+ 的替代品，
           # requirements.txt 已把 starlette 钉在 1.7.0，二者不能混装）
-          python -m pip install pytest httpx==0.28.1
+          # python-multipart 是桌面导入接口（File 上传）在模块导入期就要求的；
+          # pypdf 只在 PDF 导入用例里用到。
+          python -m pip install pytest httpx==0.28.1 python-multipart==0.0.32 pypdf==6.4.0
 
       - name: 静态自检（编码 / 导入 / i18n / CSS 类）
         run: |
@@ -58,6 +60,18 @@ jobs:
 
       - name: 算法引擎单元测试（pytest）
         run: python -m pytest tests/test_advice_engine.py -q
+
+      - name: 桌面壳 / 同步 / 导入 / 更新 / 备份测试（pytest）
+        # test_desktop_frozen.py 与 test_desktop_shell.py 需要打包好的 exe，在 Linux CI 上自行 skip。
+        run: |
+          python -m pytest -q \
+            tests/test_desktop_mode.py \
+            tests/test_sync_protocol.py \
+            tests/test_sync_convergence.py \
+            tests/test_importers.py \
+            tests/test_updater.py \
+            tests/test_desktop_runtime.py \
+            tests/test_backup_db.py
 
       - name: 后端冒烟测试（TestClient，独立临时库）
         run: python tests/smoke_test.py

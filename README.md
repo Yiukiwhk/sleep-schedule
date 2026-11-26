@@ -101,14 +101,16 @@ Windows 也可直接运行 `start.bat`（等价于用虚拟环境解释器启动
 ## 桌面版（Windows，实验性）
 
 0.2.0 起应用显示名是 **Sleep schedule**（exe 为 `SleepSchedule.exe`，安装目录 `%ProgramFiles%\SleepSchedule`）；
-数据目录名仍是 `YiukiSleep`，老版本升级后记录、方案与设备绑定都还在。桌面版窗口里不显示 ICP/公安备案号，
+0.2.3 起数据目录也从 `YiukiSleep` 改为 `SleepSchedule`，首次启动会把旧目录**复制**过来（旧目录保留，
+失败下次重试），所以老版本升级后记录、方案与设备绑定都还在。桌面版窗口里不显示 ICP/公安备案号，
 网页版照旧显示。0.2.2 起窗口、任务栏、快捷方式与安装向导统一使用网页版 favicon（蓝底月牙）；方案可能无法完成时
-的偏离提示选「先不改，继续原计划」只对当晚生效，再进页面不会重复弹窗。
+的偏离提示选「先不改，继续原计划」只对当晚生效，再进页面不会重复弹窗。安装/升级/卸载的详细步骤见
+[docs/INSTALL.md](docs/INSTALL.md)。
 
 同一套代码，把 `SSP_MODE` 切到 `desktop` 就变成「本机应用 + 可选云同步」：后端仍跑本机 uvicorn（只绑 `127.0.0.1`），
 外壳用 pywebview 开窗口。数据目录按运行方式选：**安装版**（0.2.0 起装到 `%ProgramFiles%\SleepSchedule`）用机器级
-`%PROGRAMDATA%\YiukiSleep`（安装器已给它授 `users-modify`），**便携版**（onedir 目录放在任意位置）用
-`%LOCALAPPDATA%\YiukiSleep`——便携版没有安装器授权，写机器级目录会在第二次启动时报 `Permission denied`。
+`%PROGRAMDATA%\SleepSchedule`（安装器已给它授 `users-modify`），**便携版**（onedir 目录放在任意位置）用
+`%LOCALAPPDATA%\SleepSchedule`——便携版没有安装器授权，写机器级目录会在第二次启动时报 `Permission denied`。
 `--per-user-data` / `--machine-data` / `--data-dir PATH` 可强制指定。
 
 ```powershell
@@ -129,7 +131,7 @@ desktop\.venv\Scripts\python.exe -m pytest tests\test_desktop_frozen.py -q
 
 # 打安装包（PyInstaller onedir → Inno Setup → SHA256SUMS.txt + latest.json）
 # 产物：dist\desktop\SleepSchedule\（43 MB 无 OCR / 207 MB 含 OCR）、
-#       dist\desktop\SleepSchedule-setup-0.2.0.exe（68.7 MB）、latest.json
+#       dist\desktop\SleepSchedule-setup-<版本>.exe（约 69–72 MB）、latest.json
 desktop\build\build.ps1
 ```
 

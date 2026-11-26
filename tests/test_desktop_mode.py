@@ -121,6 +121,10 @@ with TestClient(app) as client:
     result["wipe_status"] = wiped.status_code
     result["wipe"] = wiped.json() if wiped.status_code == 200 else None
 
+    update = client.get("/api/desktop/update")
+    result["update_status"] = update.status_code
+    result["update"] = update.json() if update.status_code == 200 else None
+
 with open(os.environ["SSP_PROBE_OUT"], "w", encoding="utf-8") as handle:
     json.dump(result, handle, ensure_ascii=False)
 '''
@@ -132,6 +136,12 @@ def _run_probe(mode: str) -> dict[str, Any]:
     tmp.mkdir(parents=True, exist_ok=True)
     out = tmp / "probe.json"
     env = {key: value for key, value in os.environ.items() if not key.startswith("SSP_")}
+    manifest = tmp / "latest.json"
+    manifest.write_text(
+        '{"version": "9.9.9", "min_supported": "0.1.0", "notes": "probe", '
+        '"url": "https://example.invalid/probe.exe", "sha256": "' + "0" * 64 + '"}',
+        encoding="utf-8",
+    )
     env.update(
         {
             "SSP_MODE": mode,
@@ -141,6 +151,7 @@ def _run_probe(mode: str) -> dict[str, Any]:
             "SSP_LOG_FILE": str(tmp / "app.log"),
             "SSP_PROBE_BACKEND": str(BACKEND),
             "SSP_PROBE_OUT": str(out),
+            "SSP_UPDATE_MANIFEST_URL": manifest.as_uri(),
             "PYTHONIOENCODING": "utf-8",
         }
     )
@@ -198,6 +209,10 @@ def test_desktop_mode_has_no_login_no_admin_and_no_cooldown() -> None:
     assert result["import_commit"]["created"]
     assert result["wipe_status"] == 200
     assert result["wipe"]["deleted"]["records"] == 3
+    # 更新检查端到端：SSP_UPDATE_MANIFEST_URL 指向本地清单，接口必须报可更新。
+    assert result["update_status"] == 200
+    assert result["update"]["update_available"] is True
+    assert result["update"]["latest"] == "9.9.9"
 
 
 @pytest.mark.desktop
@@ -220,3 +235,4 @@ def test_server_mode_keeps_login_and_admin() -> None:
     assert result["import_parse_status"] in (404, 405)
     assert result["import_commit_status"] in (404, 405)
     assert result["wipe_status"] in (404, 405)
+    assert result["update_status"] == 404

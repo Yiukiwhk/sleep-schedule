@@ -86,8 +86,10 @@ desktop/
 前端 `/api/auth/me` 直接返回它，因此不出现登录页。
 
 **数据目录**：默认位置取决于运行方式——**安装版**（0.2.0 起程序在 `%ProgramFiles%\SleepSchedule`）用机器级
-`%PROGRAMDATA%\YiukiSleep\`（符合「同一台电脑的不同 Windows 用户是一个档案」）；
-**便携版**（green/onedir 目录放在任意可写位置）用 `%LOCALAPPDATA%\YiukiSleep\`。
+`%PROGRAMDATA%\SleepSchedule\`（符合「同一台电脑的不同 Windows 用户是一个档案」）；
+**便携版**（green/onedir 目录放在任意可写位置）用 `%LOCALAPPDATA%\SleepSchedule\`。
+0.2.2 及更早用 `YiukiSleep` 作目录名，0.2.3 起改成 `SleepSchedule`：首次启动时
+`runtime.migrate_legacy_root()` 会把旧目录**复制**过来（旧目录保留不删，失败下次重试）。
 
 ```
 <root>\
@@ -103,7 +105,7 @@ desktop/
   之后每次重开都按文件自身 DACL 检查，直接 `[Errno 13] Permission denied`；`app.db` 同理。
   便携版没有安装器去授权，所以默认退到用户目录。
 - **安装版**必须由安装器授权：`desktop/build/installer.iss` 的 `[Dirs]` 给
-  `{commonappdata}\YiukiSleep`、`data`、`logs`、`backup`、`models` 都加 `Permissions: users-modify`，
+  `{commonappdata}\SleepSchedule`、`data`、`logs`、`backup`、`models` 都加 `Permissions: users-modify`，
   否则同机标准用户装完也写不进去（这是 0.1.0 的实测缺陷）。
 - 开关：`--per-user-data` 强制用户级、`--machine-data` 强制机器级、`--data-dir PATH` 显式指定；
   三者互斥校验在 `runtime.app_root()`，`per_user and machine` 直接抛 `ValueError`。
@@ -179,10 +181,14 @@ desktop/
 记录额外保留 `record_date` 作为业务唯一键；服务端 `(user_id, record_date)` 唯一。
 
 **墓碑**：删除写 `deleted_at`，不物理删。拉取时墓碑照常返回，客户端据此删除本地行；
-墓碑保留 180 天后由服务端清理（届时两端一致，无需再传）。
+墓碑保留 180 天后由服务端清理（`retention.purge_old_tombstones()`，覆盖 `sleep_records`、
+`meal_checks`、`advice_plans`、`sync_settings`；届时两端一致，无需再传）。
 
 **游标**：服务端每用户维护 `sync_rev` 单调递增（`sync_log` 表：`rev, table, row_id, op, payload, changed_at`）。
 `pull?cursor=` 返回 `rev > cursor` 的记录与墓碑，`has_more` 用于分页（每页 500）。
+`sync_log` 只保留最近 90 天（`SSP_SYNC_LOG_RETENTION_DAYS`，`retention.trim_sync_log()`）；
+为了清理后 rev 不回退重号，`sync_log.rev` 用 `AUTOINCREMENT` 主键（老库由
+`db._migrate_sync_log_autoincrement()` 原地重建表，保留全部行）。
 
 **冲突**：最后写入胜（LWW），比较 `updated_at`；相等时比较 `client_id` 字符串，大者胜（确定性）。
 墓碑优先于更早的更新；墓碑与更新同一毫秒时，墓碑胜。
@@ -302,14 +308,14 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 2. **安装**（验证 P4 安装路径与 ACL）：双击安装包 → 默认装到 `%ProgramFiles%\SleepSchedule` →
    勾选/取消桌面图标各试一次 → 安装完成后自动启动。首次启动应直接进主界面（无登录页），
    创建一条昨天的记录，确认写入不报错。
-3. **数据位置**：`Win+R` 输入 `%PROGRAMDATA%\YiukiSleep` → 应看到 `data\app.db`、`logs\app.log`；
+3. **数据位置**：`Win+R` 输入 `%PROGRAMDATA%\SleepSchedule` → 应看到 `data\app.db`、`logs\app.log`；
    用 `icacls` 或属性→安全 确认 `Users` 有「修改」权限（安装器 `[Dirs] users-modify` 生效）。
-4. **升级**（验证 P4 更新提示）：把 `%PROGRAMDATA%\YiukiSleep\config.json` 里 `check_updates` 保持 true （默认），
+4. **升级**（验证 P4 更新提示）：把 `%PROGRAMDATA%\SleepSchedule\config.json` 里 `check_updates` 保持 true （默认），
    用上一版安装包装一次并启动旧版 → 设置页应出现「发现新版本 x.y.z」；点链接应打开浏览器下载页。
    然后用新版安装包覆盖安装 → 数据仍在（记录条数不变）。
 5. **同步**：设置→云同步 → 服务器留空 → 用测试账号登录并绑定 → 点「立即同步」→ 记录条数应与云端一致；
    若云端与本机都有方案，应弹出「使用本机方案 / 使用云端方案」二选一；选一个后方案卡片目标时间随之改变。
-6. **卸载**：设置→应用→卸载 → 重新打开 `%PROGRAMDATA%\YiukiSleep`，**数据目录必须还在**；
+6. **卸载**：设置→应用→卸载 → 重新打开 `%PROGRAMDATA%\SleepSchedule`，**数据目录必须还在**；
    再装一次，记录仍在（卸载不删数据是设计）。
 7. **回滚**：删除虚拟机或恢复 `clean` 快照，避免把测试账号/证书留在机器上。
 
@@ -725,3 +731,37 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 - `POST /api/advice/replan` 现在三种策略都返回 `saved: true`，并额外返回 `deviation_ack_saved`。
 - 版本 `0.2.2`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh`
   的 4am grep 同步，另加 `deviation_ack`（后端）与 `deviation.acked`（前端）两条自证。
+
+
+### 0.2.3（2026-11-26）
+
+收尾批次（用户批准的 6 项 + 数据目录改名）。
+
+- **服务器数据库每日备份**：`deploy/backup_db.py`（纯标准库，`sqlite3` 在线备份 + `PRAGMA integrity_check`
+  + 按 mtime 保留 14 份 + 冲突加后缀），`deploy/install_backup.ps1` / `install_backup_remote.sh`
+  装到 `/opt/sleep-schedule/deploy/`，cron 条目写到 `/etc/cron.d/sleep-schedule-backup`（每天 04:17 UTC，
+  日志 `/var/log/sleep-schedule-backup.log`）。`tests/test_backup_db.py` 覆盖行数完整、保留份数、源库缺失。
+  写 cron 时踩过坑：`printf ... | sudo_run tee` 会让 `tee` 读到 `sudo -S` 的密码并写进 cron 文件
+  （644，世界可读）；现在改成先写普通文件再 `install -m 644`，并加「文件里必须含 backup_db.py、不能含 sudo」自检。
+  事故之后部署账号密码已轮换，`/etc/systemd/system/sleep-schedule.service` 里的引导管理员账号密码
+  移到了 `/etc/sleep-schedule/env`（600 root）+ `EnvironmentFile=`。
+- **墓碑与 `sync_log` 清理**：`retention.purge_old_tombstones()`（默认 180 天，四张同步表）与
+  `retention.trim_sync_log()`（`SSP_SYNC_LOG_RETENTION_DAYS`，默认 90 天）接入 `run_cleanup()`。
+  `sync_log.rev` 改为 `AUTOINCREMENT` 主键，避免清理掉最大 rev 后 SQLite 复用 rev 造成游标漏行：
+  `models.SyncLog.__table_args__ = {"sqlite_autoincrement": True}`，老库由
+  `db._migrate_sync_log_autoincrement()` 原地重建（重命名→建新表→搬行→删旧表→建索引）。
+- **CI 扩容**：`.github/workflows/ci.yml` 在原有静态检查与 `test_advice_engine` 之外，加了
+  `test_desktop_mode`、`test_sync_protocol`、`test_sync_convergence`、`test_importers`、`test_updater`、
+  `test_desktop_runtime`、`test_backup_db`（装 `python-multipart==0.0.32`、`pypdf==6.4.0`；
+  `test_desktop_frozen` / `test_desktop_shell` 在 Linux 上自行 skip）。
+- **更新提示端到端**：`desktop/updater.manifest_url()` 支持 `SSP_UPDATE_MANIFEST_URL` 覆盖（自建服务器、
+  测试用 `file://` 清单），`updater.check()` 默认走它；`tests/test_updater.py` 加直接读本地清单的用例，
+  `tests/test_desktop_mode.py` 的桌面探针请求 `/api/desktop/update` 并断言 `update_available is True`。
+- **安装文档**：新增 `docs/INSTALL.md`（安装版/便携版/源码三种形态、升级、数据与备份、卸载、常见问题），
+  桌面的 `SleepSchedule 安装说明.txt` 按它重写（不再写死版本号）。
+- **数据目录改名**：`desktop/runtime.py` 的 `APP_FOLDER` 改为 `SleepSchedule`（旧名保留为
+  `LEGACY_APP_FOLDER`）；`migrate_legacy_root()` 在新目录还没有 `data\app.db`、而旧目录有时复制一次
+  （旧目录不删，失败下次重试），`app.py` 在 `ensure_dirs()` 前调用它；`installer.iss` 的 `[Dirs]`
+  改为 `{commonappdata}\SleepSchedule`；`tests/test_desktop_runtime.py` 同步断言并加迁移用例。
+- 版本 `0.2.3`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步，
+  另加 `purge_old_tombstones` / `trim_sync_log` / `AUTOINCREMENT` / `LEGACY_APP_FOLDER` 四条自证。

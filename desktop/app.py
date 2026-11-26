@@ -393,6 +393,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     paths = runtime.data_paths(root)
     try:
+        legacy = runtime.migrate_legacy_root(root)
+        if legacy is not None:
+            _say("migrated data from the old folder: %s" % legacy)
         runtime.ensure_dirs(paths)
         problem = runtime.probe_writable(root)
     except OSError as exc:  # noqa: BLE001 - turned into a dialog below

@@ -60,15 +60,15 @@ Source: "..\..\dist\desktop\SleepSchedule\*"; DestDir: "{app}"; Flags: ignorever
 Type: files; Name: "{app}\YiukiSleep.exe"
 
 [Dirs]
-; %PROGRAMDATA%\YiukiSleep is shared machine-wide, and only this setup runs
+; %PROGRAMDATA%\SleepSchedule is shared machine-wide, and only this setup runs
 ; elevated: without the explicit grant a standard user could create the folder
 ; (the first launch does) but every later launch would fail to open app.log and
 ; app.db with "Permission denied".
-Name: "{commonappdata}\YiukiSleep"; Permissions: users-modify
-Name: "{commonappdata}\YiukiSleep\data"; Permissions: users-modify
-Name: "{commonappdata}\YiukiSleep\logs"; Permissions: users-modify
-Name: "{commonappdata}\YiukiSleep\backup"; Permissions: users-modify
-Name: "{commonappdata}\YiukiSleep\models"; Permissions: users-modify
+Name: "{commonappdata}\SleepSchedule"; Permissions: users-modify
+Name: "{commonappdata}\SleepSchedule\data"; Permissions: users-modify
+Name: "{commonappdata}\SleepSchedule\logs"; Permissions: users-modify
+Name: "{commonappdata}\SleepSchedule\backup"; Permissions: users-modify
+Name: "{commonappdata}\SleepSchedule\models"; Permissions: users-modify
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
@@ -81,5 +81,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: no
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
 
-; %PROGRAMDATA%\YiukiSleep is intentionally left alone: it holds the local
+; %PROGRAMDATA%\SleepSchedule is intentionally left alone: it holds the local
 ; database, logs, backups and the cloud binding. Uninstall keeps the records.
+; (0.2.2 and earlier used %PROGRAMDATA%\YiukiSleep; the app copies that folder
+; once on first launch after the rename and leaves the old one in place.)

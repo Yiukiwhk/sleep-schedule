@@ -36,7 +36,7 @@ def fake_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def test_installed_copy_defaults_to_program_data(fake_roots) -> None:
     program_files, _local, shared = fake_roots
-    exe_dir = program_files / "YiukiSleep"
+    exe_dir = program_files / "SleepSchedule"
     exe_dir.mkdir()
     assert runtime.is_installed_location(exe_dir) is True
     assert runtime.default_root_mode(exe_dir) == "machine"
@@ -45,7 +45,7 @@ def test_installed_copy_defaults_to_program_data(fake_roots) -> None:
 
 def test_portable_copy_defaults_to_local_app_data(fake_roots) -> None:
     _program_files, local, _shared = fake_roots
-    exe_dir = local / "Programs" / "YiukiSleep"
+    exe_dir = local / "Programs" / "SleepSchedule"
     exe_dir.mkdir(parents=True)
     assert runtime.is_installed_location(exe_dir) is False
     assert runtime.default_root_mode(exe_dir) == "user"
@@ -54,11 +54,11 @@ def test_portable_copy_defaults_to_local_app_data(fake_roots) -> None:
 
 def test_explicit_flags_win_over_the_default(fake_roots) -> None:
     program_files, local, shared = fake_roots
-    portable = local / "Programs" / "YiukiSleep"
+    portable = local / "Programs" / "SleepSchedule"
     portable.mkdir(parents=True)
     assert runtime.app_root(per_user=True, exe_dir=portable) == (local / runtime.APP_FOLDER).resolve()
     assert runtime.app_root(machine=True, exe_dir=portable) == (shared / runtime.APP_FOLDER).resolve()
-    installed = program_files / "YiukiSleep"
+    installed = program_files / "SleepSchedule"
     installed.mkdir()
     assert runtime.app_root(per_user=True, exe_dir=installed) == (local / runtime.APP_FOLDER).resolve()
     override = local / "custom"
@@ -83,6 +83,21 @@ def test_probe_writable_detects_an_unwritable_folder(tmp_path: Path) -> None:
     file_as_dir = tmp_path / "file-not-dir"
     file_as_dir.write_text("x", encoding="ascii")
     assert runtime.probe_writable(file_as_dir) is not None
+
+
+def test_legacy_yiukisleep_folder_is_copied_once(tmp_path: Path) -> None:
+    """0.2.3 起数据目录叫 SleepSchedule；旧的 YiukiSleep 只搬一次，且不删旧目录。"""
+    legacy = tmp_path / runtime.LEGACY_APP_FOLDER
+    (legacy / "data").mkdir(parents=True)
+    (legacy / "data" / "app.db").write_bytes(b"old-records")
+    root = tmp_path / runtime.APP_FOLDER
+
+    migrated = runtime.migrate_legacy_root(root)
+    assert migrated == legacy
+    assert (root / "data" / "app.db").read_bytes() == b"old-records"
+    # 第二次启动：新目录已有 app.db，不能再从旧目录覆盖。
+    assert runtime.migrate_legacy_root(root) is None
+    assert (legacy / "data" / "app.db").exists()
 
 
 def test_window_url_has_a_single_slash_before_the_token() -> None:

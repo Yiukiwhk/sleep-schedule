@@ -59,7 +59,7 @@ fi
 # (SSP_MODE + routers + runtime/local guard) and the cloud sync API that
 # desktop builds call.
 # Must stay in sync with $backendFiles in deploy/apply_fix.ps1.
-BACKEND_FILES="app/api/__init__.py app/api/admin.py app/api/advice.py app/api/auth.py app/api/desktop_api.py app/api/records.py app/api/runtime_api.py app/api/sync_api.py app/config.py app/core/local_guard.py app/core/timing.py app/db.py app/deps.py app/desktop.py app/main.py app/models.py app/schemas.py app/services/advice.py app/services/advice_plan.py app/services/auth_service.py app/services/sessions.py app/services/sync_engine.py app/version.py"
+BACKEND_FILES="app/api/__init__.py app/api/admin.py app/api/advice.py app/api/auth.py app/api/desktop_api.py app/api/records.py app/api/runtime_api.py app/api/sync_api.py app/config.py app/core/local_guard.py app/core/timing.py app/db.py app/deps.py app/desktop.py app/main.py app/models.py app/schemas.py app/services/advice.py app/services/advice_plan.py app/services/auth_service.py app/services/retention.py app/services/sessions.py app/services/sync_engine.py app/version.py"
 
 echo "== 2b. backend code =="
 BACKEND_BACKUP=/tmp/sleep-backend-backup
@@ -667,7 +667,7 @@ grep_file "i18n.js: both hint texts exist" "$WEBROOT/shared/i18n.js" 'advice.anc
 
 echo "== 4am. the cloud sync API that desktop builds call is deployed =="
 # 桌面端绑定云端账号时调用 /api/sync/*；缺一个模块就 404，桌面端只会看到"绑定失败"。
-grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.2.2"'
+grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.2.3"'
 grep_file "main: desktop routers are conditional" "$APP_DIR/backend/app/main.py" 'include_desktop=settings.DESKTOP'
 grep_file "local guard: token header checked" "$APP_DIR/backend/app/core/local_guard.py" 'X-Local-Token'
 grep_file "sync engine: lww compare" "$APP_DIR/backend/app/services/sync_engine.py" 'def is_newer'
@@ -683,6 +683,10 @@ grep_file "sync api: device tokens" "$APP_DIR/backend/app/api/sync_api.py" 'X-De
 grep_file "sync api: push endpoint" "$APP_DIR/backend/app/api/sync_api.py" 'def sync_push('
 grep_file "sync api: plan endpoint" "$APP_DIR/backend/app/api/sync_api.py" '@router.get("/plan")'
 grep_file "advice plan: keep remembers the deviation" "$APP_DIR/backend/app/services/advice_plan.py" 'deviation_ack'
+grep_file "retention: expired tombstones are purged" "$APP_DIR/backend/app/services/retention.py" 'def purge_old_tombstones('
+grep_file "retention: sync log trimmed" "$APP_DIR/backend/app/services/retention.py" 'def trim_sync_log('
+grep_file "models: sync log rev never rewinds" "$APP_DIR/backend/app/models.py" 'sqlite_autoincrement'
+grep_file "db: legacy sync_log rebuilt with autoincrement" "$APP_DIR/backend/app/db.py" '_migrate_sync_log_autoincrement'
 grep_file "advice page: acknowledged deviation is skipped" "$WEBROOT/user/js/pages/advice.js" 'deviation.acked'
 grep_file "sync api: desktop-only account creation" "$APP_DIR/backend/app/api/sync_api.py" '"X-Client"'
 # POST without the desktop header must be refused before anything is created.

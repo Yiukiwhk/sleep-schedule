@@ -89,6 +89,7 @@ $backendFiles = @(
     "app\services\advice.py",
     "app\services\advice_plan.py",
     "app\services\auth_service.py",
+    "app\services\retention.py",
     "app\services\sessions.py",
     "app\services\sync_engine.py",
     "app\version.py"

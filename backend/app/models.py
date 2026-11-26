@@ -328,9 +328,15 @@ class SyncDevice(Base):
 
 
 class SyncLog(Base):
-    """同步变更日志：rev 单调递增，push 每落一行就追加一条，pull 按 rev 增量拉取。"""
+    """同步变更日志：rev 单调递增，push 每落一行就追加一条，pull 按 rev 增量拉取。
+
+    sqlite_autoincrement 让旧行被清理后新 rev 也不会回退重号：清理掉最大 rev 的
+    几行后，SQLite 若按 max(rowid)+1 分配就会复用 rev，客户端拿着更大的游标
+    永远拉不到这些新行。开了 AUTOINCREMENT 才会记住历史最大值。
+    """
 
     __tablename__ = "sync_log"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     rev: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)

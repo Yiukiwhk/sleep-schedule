@@ -135,7 +135,43 @@ def init_db() -> None:
     _migrate_sleep_records_wake_date()
     _migrate_sleep_records_meal_date()
     _migrate_sync_columns()
+    _migrate_sync_log_autoincrement()
     _ensure_sqlite_pragmas()
+
+
+def _migrate_sync_log_autoincrement() -> None:
+    """把 sqlite 的 sync_log 改造成 AUTOINCREMENT 主键。
+
+    旧库的 sync_log.rev 是普通 INTEGER PRIMARY KEY（rowid 别名），删掉最大几行后
+    SQLite 会按 max(rowid)+1 重新分配，导致 rev 回退重号——客户端游标一旦领先，
+    新写入的行就永远拉不到。retention 要清理 sync_log，所以必须先保证 rev 单调。
+    """
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='sync_log'")
+        ).fetchone()
+        if row is None or "AUTOINCREMENT" in (row[0] or "").upper():
+            return
+        conn.execute(text("ALTER TABLE sync_log RENAME TO sync_log_old"))
+        conn.execute(
+            text(
+                "CREATE TABLE sync_log ("
+                "rev INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
+                "user_id INTEGER NOT NULL, "
+                "table_name VARCHAR(32) NOT NULL, "
+                "client_row_id VARCHAR(64) NOT NULL, "
+                "op VARCHAR(8) NOT NULL, "
+                "changed_at DATETIME NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO sync_log (rev, user_id, table_name, client_row_id, op, changed_at) "
+                "SELECT rev, user_id, table_name, client_row_id, op, changed_at FROM sync_log_old"
+            )
+        )
+        conn.execute(text("DROP TABLE sync_log_old"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sync_log_user_id ON sync_log (user_id)"))
 
 
 

@@ -28,6 +28,7 @@ from datetime import date, datetime, timedelta, timezone
 sys.path.insert(0, os.environ["SSP_PROBE_BACKEND"])
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app import models
 from app.core.security import hash_password
@@ -210,6 +211,40 @@ def main():
             item.get("note") == "from-web" for item in listed.get("items", [])
         )
         checks["delete_total"] = listed.get("total") == 1
+
+        # 保留策略：过期墓碑被物理删除、活的记录不受影响；sync_log 只保留最近 N 天。
+        from app.services import retention
+        from app.models import SleepRecord as RecordModel, SyncLog
+
+        old = datetime.utcnow() - timedelta(days=400)
+        with write_session() as session:
+            session.execute(
+                text(
+                    "UPDATE sleep_records SET deleted_at = :old "
+                    "WHERE deleted_at IS NOT NULL"
+                ),
+                {"old": old},
+            )
+            session.add(
+                SyncLog(
+                    user_id=probe_id,
+                    table_name="sleep_records",
+                    client_row_id="stale-log-row",
+                    op="upsert",
+                    changed_at=old,
+                )
+            )
+            session.flush()
+        checks["tombstones_purged"] = retention.purge_old_tombstones() >= 1
+        checks["live_record_kept"] = retention.count_user_records(probe_id) == 1
+        checks["sync_log_trimmed"] = retention.trim_sync_log(days=90) >= 1
+        with write_session() as session:
+            checks["sync_log_still_monotonic"] = (
+                session.execute(
+                    text("SELECT sql FROM sqlite_master WHERE name='sync_log'")
+                ).scalar()
+                or ""
+            ).upper().find("AUTOINCREMENT") >= 0
     out = os.environ.get("SSP_PROBE_OUT")
     if out:
         with open(out, "w", encoding="utf-8") as handle:

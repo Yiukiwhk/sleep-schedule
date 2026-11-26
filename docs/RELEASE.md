@@ -4,6 +4,25 @@
 [`docs/DESKTOP.md`](DESKTOP.md) 第 10、13 节；桌面端用 `deploy\publish_desktop.ps1` 发布到
 `https://yiuki.me/desktop/`，GitHub Release 的附件与此处列出的文件一致。
 
+## v0.2.3（2026-11-26）
+
+- **服务器数据库自动备份**：`deploy/backup_db.py` 每天 04:17 用 SQLite 在线备份 API 导出一份
+  `/var/backups/sleep-schedule/app-<UTC 时间>.db`，校验 `PRAGMA integrity_check` 后保留最近 14 份；
+  安装脚本 `deploy/install_backup.ps1`。
+- **墓碑与同步日志清理**：删除记录留下的墓碑（180 天）由 `purge_old_tombstones()` 清理，
+  `sync_log` 只保留 90 天（`SYNC_LOG_RETENTION_DAYS`），并给 `sync_log.rev` 加 `AUTOINCREMENT`
+  迁移（避免清空后 SQLite 复用 rev、客户端游标漏行）。
+- **桌面数据目录改名**：`%PROGRAMDATA%\SleepSchedule` / `%LOCALAPPDATA%\SleepSchedule`；首次启动会
+  从旧的 `YiukiSleep` 目录复制一份数据（旧目录保留），升级不丢记录、方案与云同步绑定。
+- **更新提示端到端**：`SSP_UPDATE_MANIFEST_URL` 可覆盖清单地址，`/api/desktop/update` 与
+  `tests/test_desktop_mode.py` 现在覆盖「发现新版本」这条链路；CI 增加同步/导入/更新/备份测试。
+- **安装文档**：新增 `docs/INSTALL.md`，桌面安装说明重写为不写死版本号。
+
+| 文件 | 大小（字节） | SHA-256 |
+| --- | --- | --- |
+| `SleepSchedule-setup-0.2.3.exe` | 72,008,744 | `221f4b00f19b786c3eb3304d6faee71fedf2872ba094a7297e24f27f34f4c31f` |
+| `SleepSchedule-portable-0.2.3.zip` | 96,813,294 | `d5f28e37e03b0db7790fb324ab3024087c34cacf66f4f13e79d7099cf6d3c4b4` |
+
 ## v0.2.2（2026-11-26）
 
 已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.2>

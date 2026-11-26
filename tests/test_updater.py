@@ -70,6 +70,20 @@ def test_check_reports_new_version_and_warnings():
     assert "update.bad_sha256" in info.warnings
 
 
+def test_env_override_is_used_by_default_check(monkeypatch, tmp_path):
+    """SSP_UPDATE_MANIFEST_URL 让自建服务器/测试可以替换清单地址（file:// 也要能读）。"""
+    manifest = tmp_path / "latest.json"
+    manifest.write_text(
+        '{"version": "9.9.9", "min_supported": "0.1.0", "url": "https://example.com/x.exe"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SSP_UPDATE_MANIFEST_URL", manifest.as_uri())
+    info = updater.check("0.2.3")
+    assert info.ok
+    assert info.update_available
+    assert info.latest == "9.9.9"
+
+
 def test_check_current_version_is_not_an_update_and_https_is_clean():
     payload = {"version": "0.1.0", "url": "https://yiuki.me/desktop/x.exe", "sha256": "0" * 64}
     server, url = _serve(payload)

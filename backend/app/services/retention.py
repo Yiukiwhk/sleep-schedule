@@ -90,8 +90,56 @@ def trim_system_logs(keep: int | None = None) -> int:
     return run_with_retry(_delete, label="trim_logs")
 
 
+def purge_old_tombstones(days: int | None = None) -> int:
+    """清掉过期墓碑（逻辑删除的行）。
+
+    同步删除用 deleted_at 做墓碑，好让别的设备也能看到"这行没了"；墓碑本身
+    不必永久保留，超过 sync_engine.TOMBSTONE_DAYS 天就物理删除。
+    """
+    from datetime import timedelta
+
+    from ..models import AdvicePlan, MealCheck, SyncSettings
+    from ..services.sync_engine import TOMBSTONE_DAYS
+
+    days = TOMBSTONE_DAYS if days is None else days
+    threshold = utcnow() - timedelta(days=days)
+
+    def _delete() -> int:
+        removed = 0
+        with write_session() as session:
+            for model in (SleepRecord, MealCheck, AdvicePlan, SyncSettings):
+                result = session.execute(
+                    delete(model).where(
+                        model.deleted_at.is_not(None), model.deleted_at < threshold
+                    )
+                )
+                removed += result.rowcount or 0
+            session.flush()
+        return removed
+
+    return run_with_retry(_delete, label="purge_tombstones")
+
+
+def trim_sync_log(days: int | None = None) -> int:
+    """sync_log 只保留最近 N 天，避免变更日志无限增长（rev 由 AUTOINCREMENT 保证单调）。"""
+    from datetime import timedelta
+
+    from ..models import SyncLog
+
+    days = settings.SYNC_LOG_RETENTION_DAYS if days is None else days
+    threshold = utcnow() - timedelta(days=days)
+
+    def _delete() -> int:
+        with write_session() as session:
+            result = session.execute(delete(SyncLog).where(SyncLog.changed_at < threshold))
+            session.flush()
+            return result.rowcount or 0
+
+    return run_with_retry(_delete, label="trim_sync_log")
+
+
 def run_cleanup() -> dict:
-    """周期性清理：睡眠记录 + 过期会话 + 登录尝试 + 日志裁剪。"""
+    """周期性清理：睡眠记录 + 过期会话 + 登录尝试 + 日志裁剪 + 墓碑/变更日志。"""
     from ..services import sessions
 
     result = {
@@ -99,12 +147,24 @@ def run_cleanup() -> dict:
         "sessions_removed": sessions.purge_expired_sessions(),
         "attempts_removed": purge_login_attempts(),
         "logs_trimmed": trim_system_logs(),
+        "tombstones_removed": purge_old_tombstones(),
+        "sync_log_trimmed": trim_sync_log(),
         "cutoff": retention_cutoff(),
     }
-    if any(result[key] for key in ("records_removed", "sessions_removed", "attempts_removed", "logs_trimmed")):
+    changed = (
+        "records_removed",
+        "sessions_removed",
+        "attempts_removed",
+        "logs_trimmed",
+        "tombstones_removed",
+        "sync_log_trimmed",
+    )
+    if any(result[key] for key in changed):
         logkit.log_event(
             "retention_cleanup",
             "cleanup done: {records_removed} records, {sessions_removed} sessions, "
-            "{attempts_removed} attempts, {logs_trimmed} logs (cutoff {cutoff})".format(**result),
+            "{attempts_removed} attempts, {logs_trimmed} logs, "
+            "{tombstones_removed} tombstones, {sync_log_trimmed} sync log rows "
+            "(cutoff {cutoff})".format(**result),
         )
     return result

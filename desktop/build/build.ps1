@@ -96,12 +96,12 @@ $manifest = [ordered]@{
     sha256        = (Get-FileHash -Path $artifact.FullName -Algorithm SHA256).Hash.ToLower()
     size          = $artifact.Length
 }
-# 写成无 BOM 的 UTF-8：Windows PowerShell 的 `Set-Content -Encoding utf8` 会加 BOM，
-# 客户端用 json.loads 解析会直接报错（更新检查就此静默失效）。
-$manifestJson = $manifest | ConvertTo-Json
-[System.IO.File]::WriteAllText(
-    (Join-Path (Resolve-Path "dist\desktop").Path "latest.json"),
-    $manifestJson,
-    (New-Object System.Text.UTF8Encoding($false))
-)
-Write-Host "artifacts in dist\desktop (latest.json written)"
+# Write UTF-8 without BOM on purpose: Windows PowerShell "Set-Content -Encoding
+# utf8" prepends a BOM and the client json parser then fails silently, so the
+# update check would never fire. Keep this block ASCII-only; this script has no
+# BOM and PowerShell 5.1 would misread non-ASCII bytes here.
+$manifestJson = ($manifest | ConvertTo-Json)
+$manifestPath = Join-Path (Resolve-Path "dist\desktop").Path "latest.json"
+[System.IO.File]::WriteAllText($manifestPath, [string]$manifestJson, (New-Object System.Text.UTF8Encoding($false)))
+if ((Get-Item $manifestPath).Length -lt 2) { throw "latest.json is empty" }
+Write-Host ("artifacts in dist\desktop (latest.json {0} bytes)" -f (Get-Item $manifestPath).Length)

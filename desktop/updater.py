@@ -17,6 +17,7 @@ Pure standard library so the update check also works in the frozen bundle.
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.request
 from dataclasses import dataclass, field
@@ -82,11 +83,22 @@ def fetch_manifest(url: str = DEFAULT_MANIFEST_URL, *, timeout: float = CHECK_TI
     return manifest
 
 
-def check(current: str, *, url: str = DEFAULT_MANIFEST_URL, timeout: float = CHECK_TIMEOUT) -> UpdateInfo:
+def manifest_url() -> str:
+    """清单地址：SSP_UPDATE_MANIFEST_URL 可覆盖（自建服务器、测试用 file:// 清单）。"""
+    override = (os.environ.get("SSP_UPDATE_MANIFEST_URL") or "").strip()
+    return override or DEFAULT_MANIFEST_URL
+
+
+def check(
+    current: str,
+    *,
+    url: str | None = None,
+    timeout: float = CHECK_TIMEOUT,
+) -> UpdateInfo:
     """Best effort: network or format failures come back as info.error, never raise."""
     info = UpdateInfo(current=current)
     try:
-        manifest = fetch_manifest(url, timeout=timeout)
+        manifest = fetch_manifest(url or manifest_url(), timeout=timeout)
     except Exception as exc:  # noqa: BLE001 - update checks must never break startup
         info.error = f"network: {exc}"
         return info

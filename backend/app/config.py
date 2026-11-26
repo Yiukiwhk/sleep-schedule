@@ -44,6 +44,9 @@ class Settings:
     SYNC_NEW_ACCOUNT_GRACE_HOURS: int = _env_int("SYNC_NEW_ACCOUNT_GRACE_HOURS", 24)
     # Anti-abuse throttle for POST /api/sync/account (per IP per hour).
     SYNC_ACCOUNT_RATE_LIMIT: int = _env_int("SYNC_ACCOUNT_RATE_LIMIT", 3)
+    # How long sync_log rows are kept for the change log / debugging. Pruning is
+    # safe only because sync_log.rev uses AUTOINCREMENT (see db.py).
+    SYNC_LOG_RETENTION_DAYS: int = _env_int("SYNC_LOG_RETENTION_DAYS", 90)
 
     @property
     def DESKTOP(self) -> bool:
