@@ -671,3 +671,14 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 - 版本号 0.1.2 → 0.1.3；部署自证 4am 段新增 `active_settings_row` / `_apply_settings_to_user` / `@router.get("/settings")` 三条 grep。
 - 已知小事：从聊天/文件卡片里双击安装包会因沙箱令牌写不了 `%TEMP%\is-*.tmp` 报 `Error 5: 拒绝访问`；
   从桌面/资源管理器双击，或直接用免安装 zip，不受影响。
+
+### 0.1.4（2026-11-26）
+
+- **修安装版窗口双击无窗口直接崩溃**：`console=False` 的 exe 从资源管理器启动时没有继承 std 句柄，
+  `sys.stdout` / `sys.stderr` 为 `None`，uvicorn 的默认 logging config 在 `sys.stdout.isatty()` 上抛
+  `AttributeError: 'NoneType' object has no attribute 'isatty'`，整个进程在建窗口前退出。
+  - `desktop/app.py` 新增 `_ensure_std_streams()`：`main()` 第一步把缺失的 `stdout` / `stderr` 指向 `os.devnull`
+    （真正的日志仍写 `%PROGRAMDATA%\YiukiSleep\logs\app.log`）。
+  - `uvicorn.Config(..., log_config=None)`：不再让 uvicorn 自己 rebuild logging（它假设有控制台）。
+- 这不是安装器的问题：同一份 0.1.3 用 `--serve-only`、`--smoke` 或从 cmd 启动都正常，只有「资源管理器双击窗口版」这一条路径会崩，
+  所以之前的 `--smoke` / frozen 测试都没覆盖到。

@@ -91,3 +91,16 @@ def test_window_url_has_a_single_slash_before_the_token() -> None:
     assert url == "http://127.0.0.1:51234/?t=abc-DEF_123"
     assert "//?" not in url
     assert runtime.build_url(51234) == "http://127.0.0.1:51234/"
+
+
+def test_windowed_exe_gets_usable_std_streams(monkeypatch: pytest.MonkeyPatch) -> None:
+    """0.1.3 crashed on double-click: Explorer starts a console=False exe with no std handles."""
+    from desktop import app as desktop_app
+
+    monkeypatch.setattr(desktop_app.sys, "stdout", None)
+    monkeypatch.setattr(desktop_app.sys, "stderr", None)
+    desktop_app._ensure_std_streams()
+    assert desktop_app.sys.stdout is not None
+    assert desktop_app.sys.stderr is not None
+    desktop_app.sys.stdout.write("")  # must not raise
+    desktop_app.sys.stderr.flush()

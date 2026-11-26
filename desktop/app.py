@@ -44,6 +44,20 @@ def _say(text: str) -> None:
         print(text)
 
 
+def _ensure_std_streams() -> None:
+    """Give the windowed exe usable streams.
+
+    A console=False build launched from Explorer inherits no std handles, so
+    ``sys.stdout`` / ``sys.stderr`` are ``None``; libraries that call
+    ``.isatty()`` or ``print()`` would then crash before the window opens.
+    Redirecting them to the null device keeps those calls harmless while the
+    real diagnostics go to ``%PROGRAMDATA%\\YiukiSleep\\logs\\app.log``.
+    """
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
 
 # --------------------------------------------------------------------------- #
 # Argument parsing / backend import
@@ -124,6 +138,11 @@ class LocalServer:
             log_level="warning",
             access_log=False,
             server_header=False,
+            # A windowed (console=False) exe started from Explorer has sys.stdout /
+            # sys.stderr set to None, and uvicorn's default logging config calls
+            # sys.stdout.isatty() -> AttributeError; disabling its logging config
+            # keeps the file logger configured by app.main as the single sink.
+            log_config=None,
         )
         self._server = uvicorn.Server(config)
         self._thread = threading.Thread(target=self._server.run, name="ssp-uvicorn", daemon=True)
@@ -354,6 +373,7 @@ def _data_dir_error(root: Path, problem: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_std_streams()
     args = parse_args(list(sys.argv[1:] if argv is None else argv))
     if args.version:
         from desktop import __version__

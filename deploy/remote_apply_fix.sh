@@ -667,7 +667,7 @@ grep_file "i18n.js: both hint texts exist" "$WEBROOT/shared/i18n.js" 'advice.anc
 
 echo "== 4am. the cloud sync API that desktop builds call is deployed =="
 # 桌面端绑定云端账号时调用 /api/sync/*；缺一个模块就 404，桌面端只会看到"绑定失败"。
-grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.1.3"'
+grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.1.4"'
 grep_file "main: desktop routers are conditional" "$APP_DIR/backend/app/main.py" 'include_desktop=settings.DESKTOP'
 grep_file "local guard: token header checked" "$APP_DIR/backend/app/core/local_guard.py" 'X-Local-Token'
 grep_file "sync engine: lww compare" "$APP_DIR/backend/app/services/sync_engine.py" 'def is_newer'
