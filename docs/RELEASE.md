@@ -6,6 +6,8 @@
 
 ## v0.2.1（2026-11-26）
 
+已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.1>
+
 - **同步后自动刷新目标作息**：绑定 / 立即同步 / 选择方案之后，页面会重新拉一次 `/api/auth/me` 并重渲染，
   「目标作息」输入框立刻显示云端同步下来的时间，不需要再手动刷新整页。
 - **显示名改为 `Sleep schedule`**：窗口标题、页头、浏览器标题、安装器显示名都改成 `Sleep schedule`；
