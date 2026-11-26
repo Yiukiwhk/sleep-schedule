@@ -100,8 +100,12 @@ Windows 也可直接运行 `start.bat`（等价于用虚拟环境解释器启动
 
 ## 桌面版（Windows，实验性）
 
+0.2.0 起应用显示名是 **sleepschedule**（exe 为 `SleepSchedule.exe`，安装目录 `%ProgramFiles%\SleepSchedule`）；
+数据目录名仍是 `YiukiSleep`，老版本升级后记录、方案与设备绑定都还在。桌面版窗口里不显示 ICP/公安备案号，
+网页版照旧显示。
+
 同一套代码，把 `SSP_MODE` 切到 `desktop` 就变成「本机应用 + 可选云同步」：后端仍跑本机 uvicorn（只绑 `127.0.0.1`），
-外壳用 pywebview 开窗口。数据目录按运行方式选：**安装版**（`%ProgramFiles%\YiukiSleep`）用机器级
+外壳用 pywebview 开窗口。数据目录按运行方式选：**安装版**（0.2.0 起装到 `%ProgramFiles%\SleepSchedule`）用机器级
 `%PROGRAMDATA%\YiukiSleep`（安装器已给它授 `users-modify`），**便携版**（onedir 目录放在任意位置）用
 `%LOCALAPPDATA%\YiukiSleep`——便携版没有安装器授权，写机器级目录会在第二次启动时报 `Permission denied`。
 `--per-user-data` / `--machine-data` / `--data-dir PATH` 可强制指定。
@@ -123,8 +127,8 @@ desktop\.venv\Scripts\python.exe desktop\app.py --check-gui
 desktop\.venv\Scripts\python.exe -m pytest tests\test_desktop_frozen.py -q
 
 # 打安装包（PyInstaller onedir → Inno Setup → SHA256SUMS.txt + latest.json）
-# 产物：dist\desktop\YiukiSleep\（43 MB 无 OCR / 207 MB 含 OCR）、
-#       dist\desktop\YiukiSleep-setup-0.1.0.exe（19.6 MB / 68.4 MB）、latest.json
+# 产物：dist\desktop\SleepSchedule\（43 MB 无 OCR / 207 MB 含 OCR）、
+#       dist\desktop\SleepSchedule-setup-0.2.0.exe（68.7 MB）、latest.json
 desktop\build\build.ps1
 ```
 
@@ -145,7 +149,7 @@ desktop\build\build.ps1
 
 - 没有管理员权限装 Inno Setup 时，把官方安装包用 `innoextract` 解到 `desktop\build\innosetup\`，`build.ps1` 会优先用它编译安装包。
 - 别从「网络位置」目录直接双击：.NET Framework 拒绝从网络区域加载托管 DLL（报 `Failed to resolve Python.Runtime.Loader.Initialize`）。
-  装到 `%PROGRAMFILES%\YiukiSleep`，或把整个 `YiukiSleep\` 目录移到 `%LOCALAPPDATA%\Programs\YiukiSleep` 再运行；
+  装到 `%PROGRAMFILES%\SleepSchedule`，或把整个 `SleepSchedule\` 目录移到 `%LOCALAPPDATA%\Programs\SleepSchedule` 再运行；
   这种情况程序会弹窗说明原因，不会静默退出。
 - 也别从编码代理/沙箱的终端里启动 exe（例如在聊天里点文件卡片）：那类进程只能写自己的工作区，
   会在建数据目录时报 `WinError 5`。用资源管理器、开始菜单或桌面快捷方式启动即可。

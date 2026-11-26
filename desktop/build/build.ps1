@@ -1,9 +1,9 @@
-# Build the Yiuki Sleep desktop bundle (onedir) and verify it with --smoke.
+# Build the sleepschedule desktop bundle (onedir) and verify it with --smoke.
 #
 #   pwsh -File desktop/build/build.ps1
 #   pwsh -File desktop/build/build.ps1 -SkipTests
 #
-# Output: dist\desktop\YiukiSleep\YiukiSleep.exe plus dist\desktop\SHA256SUMS.txt.
+# Output: dist\desktop\SleepSchedule\SleepSchedule.exe plus dist\desktop\SHA256SUMS.txt.
 # Inno Setup runs only when desktop\build\installer.iss and ISCC.exe both exist.
 
 param(
@@ -27,7 +27,7 @@ if ($Python -eq "" -or -not (Test-Path $Python)) { throw "python not found; crea
 $match = Select-String -Path "desktop\__init__.py" -Pattern '__version__ = "([^"]+)"'
 if (-not $match) { throw "cannot read __version__ from desktop\__init__.py" }
 $Version = $match.Matches[0].Groups[1].Value
-Write-Host "building YiukiSleep $Version with $Python"
+Write-Host "building sleepschedule $Version with $Python"
 
 if (-not $SkipTests) {
     # The build venv only needs the runtime deps; the test venv (backend\.venv)
@@ -46,7 +46,7 @@ Remove-Item -Recurse -Force "dist\desktop", "build\pyinstaller" -ErrorAction Sil
 & $Python -m PyInstaller --noconfirm --clean "desktop\build\app.spec" --distpath "dist\desktop" --workpath "build\pyinstaller"
 if ($LASTEXITCODE -ne 0) { throw "pyinstaller failed" }
 
-$Exe = "dist\desktop\YiukiSleep\YiukiSleep.exe"
+$Exe = "dist\desktop\SleepSchedule\SleepSchedule.exe"
 if (-not (Test-Path $Exe)) { throw "missing $Exe" }
 # The exe is windowed (no console), so it writes the self-check report to a file.
 $Report = "dist\desktop\smoke-report.json"
@@ -85,13 +85,13 @@ $lines | Set-Content -Path "dist\desktop\SHA256SUMS.txt" -Encoding ascii
 
 # Update manifest consumed by the app (docs/DESKTOP.md section 9). Publish the
 # generated file to https://yiuki.me/desktop/latest.json from the site repo.
-$installerFile = Get-ChildItem -Path "dist\desktop" -Filter "YiukiSleep-setup-*.exe" -ErrorAction SilentlyContinue |
+$installerFile = Get-ChildItem -Path "dist\desktop" -Filter "SleepSchedule-setup-*.exe" -ErrorAction SilentlyContinue |
     Select-Object -First 1
-if ($installerFile) { $artifact = $installerFile } else { $artifact = Get-Item "dist\desktop\YiukiSleep\YiukiSleep.exe" }
+if ($installerFile) { $artifact = $installerFile } else { $artifact = Get-Item "dist\desktop\SleepSchedule\SleepSchedule.exe" }
 $manifest = [ordered]@{
     version       = $Version
     min_supported = "0.1.0"
-    notes         = "Yiuki Sleep $Version"
+    notes         = "sleepschedule $Version"
     url           = "https://yiuki.me/desktop/$($artifact.Name)"
     sha256        = (Get-FileHash -Path $artifact.FullName -Algorithm SHA256).Hash.ToLower()
     size          = $artifact.Length

@@ -162,7 +162,7 @@ async def lifespan(app: FastAPI):
 # --------------------------------------------------------------------------- #
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Sleep Schedule Advisor",
+        title="sleepschedule",
         description="Generate sleep-schedule adjustment advice from historical sleep records",
         version="1.0.0",
         lifespan=lifespan,

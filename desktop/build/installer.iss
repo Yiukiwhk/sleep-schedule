@@ -1,10 +1,10 @@
-; Inno Setup script for the Yiuki Sleep desktop app (docs/DESKTOP.md section 10).
+; Inno Setup script for the sleepschedule desktop app (docs/DESKTOP.md section 10).
 ;
 ; Build the bundle first, then compile this script:
 ;   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\desktop\build\build.ps1
 ; build.ps1 passes /DMyVersion=<version> and compiles only when ISCC.exe exists.
 ;
-; The installer puts program files under %ProgramFiles%\YiukiSleep and only
+; The installer puts program files under %ProgramFiles%\SleepSchedule and only
 ; creates/authorises %PROGRAMDATA%\YiukiSleep (the shared machine profile); it
 ; never deletes it, so records survive upgrades and uninstalls.
 
@@ -12,8 +12,8 @@
   #define MyVersion "0.1.0"
 #endif
 
-#define MyAppName "Yiuki Sleep"
-#define MyAppExeName "YiukiSleep.exe"
+#define MyAppName "sleepschedule"
+#define MyAppExeName "SleepSchedule.exe"
 
 [Setup]
 AppId={{5B0F3C7E-9A24-4C1D-8E55-6F7A2D9B4C10}
@@ -21,11 +21,11 @@ AppName={#MyAppName}
 AppVersion={#MyVersion}
 AppVerName={#MyAppName} {#MyVersion}
 AppPublisher=Yiuki
-DefaultDirName={autopf}\YiukiSleep
+DefaultDirName={autopf}\SleepSchedule
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\..\dist\desktop
-OutputBaseFilename=YiukiSleep-setup-{#MyVersion}
+OutputBaseFilename=SleepSchedule-setup-{#MyVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -49,7 +49,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Files]
-Source: "..\..\dist\desktop\YiukiSleep\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\desktop\SleepSchedule\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Upgrades reuse the previous install folder (same AppId); drop the old exe so
+; shortcuts and Explorer never point at a stale 0.1.x binary.
+[InstallDelete]
+Type: files; Name: "{app}\YiukiSleep.exe"
 
 [Dirs]
 ; %PROGRAMDATA%\YiukiSleep is shared machine-wide, and only this setup runs

@@ -1,12 +1,12 @@
-"""Desktop entry point: start a loopback uvicorn server, then show the window.
+r"""Desktop entry point: start a loopback uvicorn server, then show the window.
 
 Usage:
-  YiukiSleep.exe                  open the main window
-  YiukiSleep.exe --smoke          headless self-check, exit code 0 on success
-  YiukiSleep.exe --serve-only     run the server without a window (debugging)
-  YiukiSleep.exe --per-user-data  keep data in %LOCALAPPDATA% instead of %PROGRAMDATA%
-  YiukiSleep.exe --machine-data   force %PROGRAMDATA% even for a portable copy
-  YiukiSleep.exe --data-dir PATH  explicit data folder (tests)
+  SleepSchedule.exe                  open the main window
+  SleepSchedule.exe --smoke          headless self-check, exit code 0 on success
+  SleepSchedule.exe --serve-only     run the server without a window (debugging)
+  SleepSchedule.exe --per-user-data  keep data in %LOCALAPPDATA% instead of %PROGRAMDATA%
+  SleepSchedule.exe --machine-data   force %PROGRAMDATA% even for a portable copy
+  SleepSchedule.exe --data-dir PATH  explicit data folder (tests)
 
 Data folder default: an installed copy (under Program Files) uses the shared
 %PROGRAMDATA%\YiukiSleep profile; a portable copy uses %LOCALAPPDATA%, because
@@ -35,7 +35,7 @@ if __package__ in (None, ""):  # launched as a plain script (python desktop/app.
 
 from desktop import runtime  # noqa: E402
 
-APP_TITLE = "Yiuki Sleep"
+APP_TITLE = "sleepschedule"
 
 
 def _say(text: str) -> None:
@@ -63,7 +63,7 @@ def _ensure_std_streams() -> None:
 # Argument parsing / backend import
 # --------------------------------------------------------------------------- #
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="YiukiSleep", description="Yiuki Sleep desktop client")
+    parser = argparse.ArgumentParser(prog="SleepSchedule", description="sleepschedule desktop client")
     parser.add_argument("--smoke", action="store_true", help="run the self-check and exit")
     parser.add_argument("--check-gui", action="store_true", help="check pywebview/.NET and exit")
     parser.add_argument("--report", default=None, help="write the --smoke/--check-gui report to this file")
@@ -308,8 +308,8 @@ def run_window(paths: dict[str, Path], config: dict, *, port: int, token: str) -
         if "Python.Runtime" in detail:
             hint = (
                 "\n\nThis folder cannot host the .NET runtime. Install the app (the setup "
-                "puts it under %PROGRAMFILES%\\YiukiSleep) or move the whole folder to "
-                "%LOCALAPPDATA%\\Programs\\YiukiSleep."
+                "puts it under %PROGRAMFILES%\\SleepSchedule) or move the whole folder to "
+                "%LOCALAPPDATA%\\Programs\\SleepSchedule."
             )
         _show_error("could not load the window backend:\n" + detail + hint)
         return 1
@@ -366,7 +366,7 @@ def _data_dir_error(root: Path, problem: str) -> str:
         "could not prepare the data folder:\n"
         f"{root}\n{problem}\n\n"
         "The app needs a writable folder. Either\n"
-        "  * install it with YiukiSleep-setup-*.exe (the setup grants access to %PROGRAMDATA%),\n"
+        "  * install it with SleepSchedule-setup-*.exe (the setup grants access to %PROGRAMDATA%),\n"
         "  * start it with --per-user-data to keep data under %LOCALAPPDATA%\\YiukiSleep, or\n"
         "  * start it with --data-dir PATH to use a folder you can write to."
     )

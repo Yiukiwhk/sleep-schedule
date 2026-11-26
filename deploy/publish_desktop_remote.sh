@@ -11,8 +11,8 @@ WEBROOT="/var/www/sleep-schedule"
 if [ ! -f "$STAGE/latest.json" ]; then
     echo "latest.json not found in $STAGE"; exit 1
 fi
-if ! ls "$STAGE"/YiukiSleep-setup-*.exe >/dev/null 2>&1; then
-    echo "no YiukiSleep-setup-*.exe in $STAGE"; exit 1
+if ! ls "$STAGE"/SleepSchedule-setup-*.exe >/dev/null 2>&1; then
+    echo "no SleepSchedule-setup-*.exe in $STAGE"; exit 1
 fi
 
 sudo_run() { echo "$PASS" | sudo -S -p '' "$@"; }

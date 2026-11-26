@@ -959,6 +959,9 @@
 
 .segment {
   display: inline-flex;
+  /* .field 是纵向 flex，默认 align-self: stretch 会把控件拉满整行，
+     右侧留出一段空白，看起来和按钮右缘不对齐；钉成内容宽度。 */
+  align-self: flex-start;
   padding: 3px;
   gap: 3px;
   border: 1px solid var(--border);
@@ -1073,6 +1076,12 @@
 .page-foot-icp:hover {
   color: var(--text);
   text-decoration: underline;
+}
+
+/* 桌面版是本地应用、不做网站备案公示，窗口里不显示两条备案号；
+   网页版（data-mode 不是 desktop）照旧显示，法规要求不受影响。 */
+html[data-mode="desktop"] .page-foot-icp {
+  display: none;
 }
 
 /* 大屏（宽显示器）：把内容上限跟着放宽，否则侧栏右边永远留一大片空白 */

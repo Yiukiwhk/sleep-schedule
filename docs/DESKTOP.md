@@ -85,7 +85,7 @@ desktop/
 `password_hash` 写入一个随机不可用值，永远不走密码登录）。桌面模式启动时自动为该用户建会话，
 前端 `/api/auth/me` 直接返回它，因此不出现登录页。
 
-**数据目录**：默认位置取决于运行方式——**安装版**（程序在 `%ProgramFiles%\YiukiSleep`）用机器级
+**数据目录**：默认位置取决于运行方式——**安装版**（0.2.0 起程序在 `%ProgramFiles%\SleepSchedule`）用机器级
 `%PROGRAMDATA%\YiukiSleep\`（符合「同一台电脑的不同 Windows 用户是一个档案」）；
 **便携版**（green/onedir 目录放在任意可写位置）用 `%LOCALAPPDATA%\YiukiSleep\`。
 
@@ -270,8 +270,8 @@ class ImportResult:
 
 ## 10. 打包与分发
 
-- PyInstaller `--onedir`（启动快、杀软误报少），产物 `dist/YiukiSleep/`：`YiukiSleep.exe` + `_internal/`。
-- Inno Setup 生成 `YiukiSleep-setup-x.y.z.exe`；安装到 `%ProgramFiles%\YiukiSleep`，数据在 `%PROGRAMDATA%\YiukiSleep`。
+- PyInstaller `--onedir`（启动快、杀软误报少），产物 `dist/SleepSchedule/`：`SleepSchedule.exe` + `_internal/`。
+- Inno Setup 生成 `SleepSchedule-setup-x.y.z.exe`；安装到 `%ProgramFiles%\SleepSchedule`，数据仍在 `%PROGRAMDATA%\YiukiSleep`（数据目录名不随改名变化）。
 - 依赖拆分：`requirements-desktop.txt` = 运行时依赖 + `pywebview` + `pypdf`，并 `-r requirements-ocr.txt`
   （`opencv-python-headless`、`numpy`、`onnxruntime`、`rapidocr-onnxruntime` + 其 yaml/shapely/pyclipper/six 依赖）；
   **不引入 PyTorch**（体积 1.5 GB 起）。删掉那一行 `-r` 即可构建无 OCR 的小包。
@@ -286,7 +286,7 @@ class ImportResult:
 |---|---|
 | 单测 | 模式切换（`SSP_MODE=desktop` 时无 `/admin`、无登录路由）、LWW 合并、墓碑不复活、校验规则逐条 |
 | 集成 | 两台“机器”（两个临时数据目录）互为对端，跑 push/pull 收敛；重复推送幂等 |
-| 桌面自检 | `YiukiSleep.exe --smoke`：起服务 → `/healthz` 200 → `/api/auth/me` 返回本机用户 → 建一条记录 → 退出码 0 |
+| 桌面自检 | `SleepSchedule.exe --smoke`：起服务 → `/healthz` 200 → `/api/auth/me` 返回本机用户 → 建一条记录 → 退出码 0 |
 | 手工清单 | 首次启动、关机重启数据在、绑定/解除绑定、导入 JSON/CSV/截图、断网同步失败提示、更新提示、卸载保留数据 |
 | 干净虚拟机 | 见下方「虚拟机验收流程」：快照 → 装 0.1.1 → 升级到 0.1.2 → 卸载保留数据 → 回滚快照 |
 
@@ -298,8 +298,8 @@ class ImportResult:
 VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（Windows 专业版自带）。
 
 1. **准备**：装 Windows 10/11 虚拟机 → 装 VMware/VirtualBox 增强工具（否则剪贴板/共享文件夹不可用）→
-   打一个干净快照 `clean`。把 `YiukiSleep-setup-<版本>.exe` 用共享文件夹或拖拽放进虚拟机桌面。
-2. **安装**（验证 P4 安装路径与 ACL）：双击安装包 → 默认装到 `%ProgramFiles%\YiukiSleep` →
+   打一个干净快照 `clean`。把 `SleepSchedule-setup-<版本>.exe` 用共享文件夹或拖拽放进虚拟机桌面。
+2. **安装**（验证 P4 安装路径与 ACL）：双击安装包 → 默认装到 `%ProgramFiles%\SleepSchedule` →
    勾选/取消桌面图标各试一次 → 安装完成后自动启动。首次启动应直接进主界面（无登录页），
    创建一条昨天的记录，确认写入不报错。
 3. **数据位置**：`Win+R` 输入 `%PROGRAMDATA%\YiukiSleep` → 应看到 `data\app.db`、`logs\app.log`；
@@ -527,7 +527,7 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 
 ### P4 发布与更新 —— 已完成（2026-11-25）
 
-- `desktop/build/installer.iss`（新增，Inno Setup 6）：装到 `{autopf}\YiukiSleep`，`PrivilegesRequired=admin`，
+- `desktop/build/installer.iss`（新增，Inno Setup 6）：装到 `{autopf}\SleepSchedule`，`PrivilegesRequired=admin`，
   卸载只删程序目录，**`%PROGRAMDATA%\YiukiSleep` 明确保留**。没有 ISCC 时 `build.ps1` 自动跳过，只产出 onedir。
   `ArchitecturesAllowed` 兼容 6.3 之前：`#if Ver >= 0x06030000` 用 `x64compatible`，否则退回 `x64`。
 - ISCC 查找顺序：`-Iscc` 参数 → `desktop\build\innosetup\ISCC.exe`（**本机用的便携方式**）→ 三个标准安装目录。
@@ -538,16 +538,16 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
   innoextract -d desktop\build\innosetup -e innosetup-6.0.5.exe
   ```
 
-- `desktop/build/build.ps1`：pytest（可 `-SkipTests`）→ PyInstaller（`desktop/build/app.spec`）→ 跑 `dist\desktop\YiukiSleep\YiukiSleep.exe --smoke --report` →
+- `desktop/build/build.ps1`：pytest（可 `-SkipTests`）→ PyInstaller（`desktop/build/app.spec`）→ 跑 `dist\desktop\SleepSchedule\SleepSchedule.exe --smoke --report` →
   `SHA256SUMS.txt` → Inno 编译安装包 → `dist\desktop\latest.json`（`version` / `min_supported` / `notes` / `url` / `sha256` / `size`）。
-  `latest.json` 优先指向 `YiukiSleep-setup-*.exe`；没有安装包时退回 `YiukiSleep.exe`。
+  `latest.json` 优先指向 `SleepSchedule-setup-*.exe`；没有安装包时退回 `SleepSchedule.exe`。
   pytest 阶段优先用 `backend\.venv`（带 pytest + httpx），没有该 venv 时才退回构建 venv，所以构建 venv 只需运行时依赖。
 - `backend/app/version.py` 的 `VERSION` 是版本唯一来源；`desktop/__init__.py` 与上一行保持一致，`build.ps1` 从后者读版本号。
 - `desktop/updater.py`（新增）：读 `https://yiuki.me/desktop/latest.json`，`parse_version` / `is_newer` / `check()`；
   网络或格式失败只返回 `error` 不抛异常；非 https 下载地址与非法 sha256 进 `warnings`。
 - `GET /api/desktop/update`（仅桌面模式）：返回 `{ok, current, latest, notes, url, sha256, size, min_supported, update_available, error, warnings}`。
 - 设置页只在发现新版本时显示一行「发现新版本 x.y.z，可前往下载」的链接，**不自动下载、不静默替换**。
-- 发布：`deploy/publish_desktop.ps1` 把 `dist\desktop\YiukiSleep-setup-*.exe` 与 `latest.json` 传到
+- 发布：`deploy/publish_desktop.ps1` 把 `dist\desktop\SleepSchedule-setup-*.exe` 与 `latest.json` 传到
   `/var/www/sleep-schedule/desktop/`（`chown www-data`、644），随后用公网 URL 复核清单与安装包都是 200；
   `-VerifyOnly` 只查不发。vhost 新增 `location ^~ /desktop/`（`try_files $uri =404`，缺文件必须 404，
   否则更新检查会拿到 SPA 首页 HTML 当成「清单格式错误」），远端自证新增 4an 段验证该 location 与 404 行为。
@@ -570,7 +570,7 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 | `pytest tests\test_updater.py`（desktop\.venv） | 5 passed（版本比较、清单解析、非 https/sha 告警、网络失败、缺 version） |
 | `pytest tests\test_desktop_frozen.py`（desktop\.venv，需先 `build.ps1`） | 1 passed / 1 skipped / 7.90s（**打包产物**：无令牌 403、建记录 201、重启后记录仍在、同步接口 200、multipart 导入 parse/commit 200、截图 OCR 返回 `source="ocr"`；第二条 `--smoke` + `--check-gui` 在本仓库路径下按环境限制 skip，见「已知限制」） |
 | `pytest tests\test_desktop_runtime.py`（desktop\.venv） | 6 passed（安装版→ProgramData、便携版→LocalAppData、三个开关胜负关系、`per_user+machine` 抛错、不可写目录探测、窗口 URL 单斜杠） |
-| 把新 onedir 装到 `%LOCALAPPDATA%\Programs\YiukiSleep` 后**在沙箱外**启动 | `--serve-only`：`db=C:\Users\…\AppData\Local\YiukiSleep\data\app.db`，`/healthz` 200、`/` 200、无令牌 `/api/runtime` 403；`--check-gui`：`{"ok": true, "backend": "winforms", "dotnet": "netfx"}` |
+| 把新 onedir 装到 `%LOCALAPPDATA%\Programs\SleepSchedule` 后**在沙箱外**启动 | `--serve-only`：`db=C:\Users\…\AppData\Local\YiukiSleep\data\app.db`，`/healthz` 200、`/` 200、无令牌 `/api/runtime` 403；`--check-gui`：`{"ok": true, "backend": "winforms", "dotnet": "netfx"}` |
 | `desktop\build\build.ps1`（含 pytest + PyInstaller + Inno） | exit 0：`bundled --smoke ok`、`YiukiSleep-setup-0.1.0.exe`（68.7 MB）、`SHA256SUMS.txt` 与 `latest.json` 生成 |
 | 安装包内容抽查（`innoextract -l`） | `app\YiukiSleep.exe` 13.2 MiB + `app\_internal\…` 完整 |
 | 把 onedir 复制到 `C:\Temp\ys-final` 后 `YiukiSleep.exe --check-gui` | `{"ok": true, "backend": "winforms", "dotnet": "netfx"}`，退出码 0（证明窗口后端在普通目录可用） |
@@ -606,8 +606,8 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 - **不要从被 Windows 判为「网络位置」的目录直接运行**：.NET Framework 拒绝从网络区域 `LoadFrom` 托管 DLL，
   报 `Failed to resolve Python.Runtime.Loader.Initialize`（HRESULT `0x80131515`，`LoadFile` 会提示需要 `loadFromRemoteSources`）。
   本机 DSH 沙箱把会话工作区（`…\default-workspace\…`）呈现成网络区域，所以从仓库目录双击 onedir 会失败；
-  同一份产物复制到 `C:\Temp\ys-final` 后 `--check-gui` 正常。交付时必须装安装包（`%PROGRAMFILES%\YiukiSleep`），
-  或把整个 `YiukiSleep\` 目录移到 `%LOCALAPPDATA%\Programs\YiukiSleep` 之类的普通目录。
+  同一份产物复制到 `C:\Temp\ys-final` 后 `--check-gui` 正常。交付时必须装安装包（0.2.0 起为 `%PROGRAMFILES%\SleepSchedule`），
+  或把整个 `SleepSchedule\` 目录移到 `%LOCALAPPDATA%\Programs\SleepSchedule` 之类的普通目录。
   程序在这种情况下会弹「could not load the window backend」并附上这条指引，而不是静默退出。
 - 安装包需要在干净虚拟机上手工走一遍安装/升级/卸载（见上一节清单），本机无管理员权限、未做。
 - **不要从编码代理的沙箱里启动**（例如在聊天里点文件卡片打开 exe）：这类进程只能写自己的工作区，
@@ -682,3 +682,19 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
   - `uvicorn.Config(..., log_config=None)`：不再让 uvicorn 自己 rebuild logging（它假设有控制台）。
 - 这不是安装器的问题：同一份 0.1.3 用 `--serve-only`、`--smoke` 或从 cmd 启动都正常，只有「资源管理器双击窗口版」这一条路径会崩，
   所以之前的 `--smoke` / frozen 测试都没覆盖到。
+
+### 0.2.0（2026-11-26）
+
+- **应用改名**：显示名 `sleepschedule`（窗口标题、页头 `app.name`、`app.userTitle`、`app.adminTitle`、浏览器标题）；
+  exe 与安装包改为 `SleepSchedule.exe` / `SleepSchedule-setup-x.y.z.exe`，安装目录 `%ProgramFiles%\SleepSchedule`。
+  **数据目录名不变**：`%PROGRAMDATA%\YiukiSleep` 与 `%LOCALAPPDATA%\YiukiSleep` 保留原名，这样 0.1.x 的用户升级后
+  记录、方案与设备绑定都还在（`runtime.APP_FOLDER` 未改）。
+  - `installer.iss` 仍是同一个 `AppId`：升级会沿用旧安装目录，因此新增 `[InstallDelete]` 删掉旧的 `YiukiSleep.exe`，
+    避免桌面/开始菜单指向旧二进制。
+- **桌面版隐藏备案号**：`frontend/user/css/app.css` 加 `html[data-mode="desktop"] .page-foot-icp { display: none; }`；
+  网页版（`data-mode` 不是 `desktop`）照旧显示两条备案号，法规公示不受影响。
+- **「一天调整/多天调整」控件右缘对齐**：`.segment` 加 `align-self: flex-start`。它所在的 `.field` 是纵向 flex，
+  默认 `stretch` 会把分段控件拉满整行，右侧看上去比「多天调整」按钮多出一段空白。
+- 发布物：`dist\desktop\SleepSchedule\`、`dist\desktop\SleepSchedule-setup-0.2.0.exe`、`latest.json`；
+  桌面 `SleepSchedule-setup-0.2.0.exe` 与 `SleepSchedule-portable-0.2.0.zip`；GitHub 仓库打 `v0.2.0` tag 并写 release notes。
+

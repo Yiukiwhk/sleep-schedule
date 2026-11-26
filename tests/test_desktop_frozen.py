@@ -1,6 +1,6 @@
-"""打包产物端到端检查：跑 dist 里的 YiukiSleep.exe，重启后数据还在（P4 补强）。
+"""打包产物端到端检查：跑 dist 里的 SleepSchedule.exe，重启后数据还在（P4 补强）。
 
-需要先 `desktop\\build\\build.ps1` 产出 dist\\desktop\\YiukiSleep\\YiukiSleep.exe，
+需要先 `desktop\\build\\build.ps1` 产出 dist\\desktop\\SleepSchedule\\SleepSchedule.exe，
 没有产物时整个文件跳过。运行：desktop\\.venv\\Scripts\\python.exe -m pytest tests/test_desktop_frozen.py -q
 """
 
@@ -22,7 +22,7 @@ from uuid import uuid4
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "desktop" / "YiukiSleep" / "YiukiSleep.exe"
+EXE = ROOT / "dist" / "desktop" / "SleepSchedule" / "SleepSchedule.exe"
 TOKEN = "frozen-test-token"
 
 

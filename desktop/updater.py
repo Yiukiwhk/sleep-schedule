@@ -8,7 +8,7 @@ https://yiuki.me/desktop/latest.json
 Shape of the manifest::
 
     {"version": "0.2.0", "min_supported": "0.2.0", "notes": "...",
-     "url": "https://yiuki.me/desktop/YiukiSleep-setup-0.2.0.exe",
+     "url": "https://yiuki.me/desktop/SleepSchedule-setup-0.2.0.exe",
      "sha256": "…", "size": 123456}
 
 Pure standard library so the update check also works in the frozen bundle.
@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 DEFAULT_MANIFEST_URL = "https://yiuki.me/desktop/latest.json"
 CHECK_TIMEOUT = 6.0
-USER_AGENT = "YiukiSleep-Desktop"
+USER_AGENT = "SleepSchedule-Desktop"
 
 _VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$")
 

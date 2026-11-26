@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the Yiuki Sleep desktop shell (onedir).
+"""PyInstaller spec for the sleepschedule desktop shell (onedir).
 
 Build:  pyinstaller --noconfirm --clean desktop/build/app.spec --distpath dist/desktop --workpath build/pyinstaller
 The bundle contains the shell (desktop/app.py), the backend package (backend/app)
@@ -98,7 +98,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="YiukiSleep",
+    name="SleepSchedule",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -119,5 +119,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="YiukiSleep",
+    name="SleepSchedule",
 )

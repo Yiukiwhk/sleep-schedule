@@ -6,10 +6,10 @@
 
 export const DICTS = {
   zh: {
-    "app.name": "作息安排",
+    "app.name": "sleepschedule",
     "app.tagline": "根据历史作息，生成可执行的调整方案",
-    "app.userTitle": "作息安排 · 用户端",
-    "app.adminTitle": "作息安排 · 管理后台",
+    "app.userTitle": "sleepschedule · 用户端",
+    "app.adminTitle": "sleepschedule · 管理后台",
     "theme.dark": "深色",
     "theme.light": "浅色",
 
@@ -622,10 +622,10 @@ export const DICTS = {
   },
 
   en: {
-    "app.name": "Sleep Schedule",
+    "app.name": "sleepschedule",
     "app.tagline": "Turn your sleep history into an actionable adjustment plan",
-    "app.userTitle": "Sleep Schedule · User",
-    "app.adminTitle": "Sleep Schedule · Admin Console",
+    "app.userTitle": "sleepschedule · User",
+    "app.adminTitle": "sleepschedule · Admin Console",
     "theme.dark": "Dark",
     "theme.light": "Light",
 

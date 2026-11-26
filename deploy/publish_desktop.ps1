@@ -2,7 +2,7 @@
 #
 #   .\deploy\publish_desktop.ps1
 #
-# Copies dist\desktop\YiukiSleep-setup-*.exe and dist\desktop\latest.json to
+# Copies dist\desktop\SleepSchedule-setup-*.exe and dist\desktop\latest.json to
 # /var/www/sleep-schedule/desktop/ on the server, so the desktop app's update
 # check (https://yiuki.me/desktop/latest.json) and the download link work.
 # Connection settings come from deploy/local.settings.ps1, exactly like
@@ -59,9 +59,9 @@ if (-not $VerifyOnly) {
     if (-not (Test-Path -LiteralPath (Join-Path $dist "latest.json"))) {
         throw "dist\desktop\latest.json not found - run desktop\build\build.ps1 first"
     }
-    $setup = Get-ChildItem -LiteralPath $dist -Filter "YiukiSleep-setup-*.exe" |
+    $setup = Get-ChildItem -LiteralPath $dist -Filter "SleepSchedule-setup-*.exe" |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $setup) { throw "no YiukiSleep-setup-*.exe in dist\desktop - run the build first" }
+    if (-not $setup) { throw "no SleepSchedule-setup-*.exe in dist\desktop - run the build first" }
 
     $stage = Join-Path $env:TEMP "sleep-desktop-stage"
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
