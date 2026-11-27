@@ -6,6 +6,8 @@
 
 ## v0.2.6（2026-11-27）
 
+已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.6>
+
 保留期与同步范围对齐。
 
 - **桌面版不自动删除数据**：`RETENTION_MONTHS` 桌面端为 `1200`（约 100 年，等同不删），服务器端为 `24`
