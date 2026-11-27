@@ -4,6 +4,17 @@
 [`docs/DESKTOP.md`](DESKTOP.md) 第 10、13 节；桌面端用 `deploy\publish_desktop.ps1` 发布到
 `https://yiuki.me/desktop/`，GitHub Release 的附件与此处列出的文件一致。
 
+## v0.2.5（2026-11-27）
+
+- **桌面版数据保留期由 1200 个月改为 24 个月**：服务器版仍为 6 个月。桌面版不启动周期清理任务，
+  超出 24 个月的记录会在下次启动时删除；设置页与 `/api/runtime` 显示的保留期同步变为 24 个月。
+- 无界面与协议变更，升级可直接覆盖安装。
+
+| 文件 | 大小（字节） | SHA-256 |
+| --- | --- | --- |
+| `SleepSchedule-setup-0.2.5.exe` | 72,013,364 | `99f8c5e94e4c6e4653bbfba229de3106f8312904bb1ff30e667e37cf55615278` |
+| `SleepSchedule-portable-0.2.5.zip` | 96,812,911 | `4e4b298158e14385fe55376cc0380208e754a5f4dc3276906bc34b2e6aac62e4` |
+
 ## v0.2.4（2026-11-27）
 
 已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.4>

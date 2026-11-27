@@ -72,7 +72,7 @@ desktop/
 | 建议引擎 | 有 | 有 | 本地算，离线可用 |
 | 三餐锚点 | 有 | 有 | 设置随同步走 |
 | 写入冷却 | 10 秒 | **0** | 单人本地无并发 |
-| 6 个月保留 | 有 | **不删**（`RETENTION_MONTHS=1200`） | 本地磁盘归用户 |
+| 6 个月保留 | 有 | **24 个月**（`RETENTION_MONTHS=24`） | 本机单人，多留一年 |
 | 注销账号 | 有 | 换成「清空本地数据」 | 无账号可注销 |
 | 云同步 | — | 有（可选） | §6 / §7 |
 | 截图 OCR | — | 有 | §8 |
@@ -378,7 +378,7 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 改动（只动后端 + 测试，前端未改；`/api/auth/me` 在桌面模式返回 200 就足以跳过登录页）：
 
 - `backend/app/config.py`：新增 `MODE`、`DESKTOP`（`MODE == "desktop"`）、`DESKTOP_USERNAME`（默认 `本机`）；
-  `WRITE_COOLDOWN_SECONDS` 在桌面模式默认 `0`，`RETENTION_MONTHS` 默认 `1200`（100 年＝不删）。
+  `WRITE_COOLDOWN_SECONDS` 在桌面模式默认 `0`，`RETENTION_MONTHS` 默认 `24`（服务器版仍是 6）。
 - `backend/app/desktop.py`（新增）：`ensure_local_user()` 幂等建/取本地档案——`username="本机"`、
   `is_admin=False`、随机不可用密码（`hash_password(secrets.token_urlsafe(32))`），并发撞唯一索引时重读；
   `local_user(db)` 供依赖注入使用。
@@ -397,7 +397,7 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 | 项 | 结果 |
 |---|---|
 | `pytest tests\test_advice_engine.py tests\test_desktop_mode.py -q -p no:cacheprovider` | 34 passed |
-| `SSP_MODE=desktop` 起真实 uvicorn（`run.py --port 18012`） | `/` 200、`/user/` 200、`/admin/` 404、`/api/admin/stats` 404、`/api/auth/me` 200 且 `username=本机`/`is_admin=false`、`/api/records/meta` 冷却 0 / 保留 1200 月、连续两次写入 201/201（无 429）、`/api/auth/login` 与 `/api/auth/password` 404 |
+| `SSP_MODE=desktop` 起真实 uvicorn（`run.py --port 18012`） | `/` 200、`/user/` 200、`/admin/` 404、`/api/admin/stats` 404、`/api/auth/me` 200 且 `username=本机`/`is_admin=false`、`/api/records/meta` 冷却 0 / 保留 24 月（P0 时曾为 1200，0.2.5 起改为 24）、连续两次写入 201/201（无 429）、`/api/auth/login` 与 `/api/auth/password` 404 |
 | `deploy\accept_local.ps1`（服务端模式全量） | `local acceptance: ALL PASS`（e2e 74 项全过） |
 | 8 个 `scripts/` 静态检查 | 全部 exit 0 |
 
@@ -783,3 +783,16 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
   渲染）。0.2.0/0.2.1 的 exe 没有自定义图标，显示的是 PyInstaller 默认图标（黄色图形，容易被看成蛇），
   0.2.2 起已改为网页同款月亮图标。
 - 版本 `0.2.4`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步。
+
+### 0.2.5（2026-11-27）
+
+数据保留期调整。
+
+- **桌面版保留期由 1200 个月改为 24 个月**：`backend/app/config.py` 中
+  `RETENTION_MONTHS = _env_int("RETENTION_MONTHS", 24 if MODE == "desktop" else 6)`。
+  原先桌面模式设为 1200（100 年，等于不删），属于过度设计；服务器版保持 6 个月不变。
+- 桌面模式不启动周期清理任务，`run_cleanup()` 只在每次启动时执行一次，因此超过 24 个月的记录
+  会在下次启动时删除；`/api/records/meta` 与 `/api/runtime` 返回的 `retention_months` 随之为 24。
+- `tests/test_desktop_mode.py` 的断言改为 `retention_months == 24`；`docs/CONFIGURATION.md` 的
+  `SSP_RETENTION_MONTHS` 行注明桌面模式默认 24。
+- 版本 `0.2.5`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步。
