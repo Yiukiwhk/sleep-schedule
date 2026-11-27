@@ -143,19 +143,19 @@ desktop\build\build.ps1
    「服务器地址」**留空就用官方 `https://yiuki.me`**；自建服务器可以填自己的地址（允许 `http://` 内网地址、端口与子路径，
   例如 `https://example.com/sleep`），同步协议见 `docs/DESKTOP.md` 第 7 节。绑定失败时同步卡会把原因写在红字里
   （密码错误 / 服务器没有同步接口 / 服务器版本太旧 / 新账号 24 小时内不能同步 等）。
-  同步完成后若「方案」或「目标作息」两边不一致，会弹**一个**窗口让你选「使用云端方案 / 使用本机方案」：
-  选云端会把方案和目标作息一起改成云端的，选本机则保留本机现状并推送到云端。
+  同步完成后，若「方案」或「目标作息」在两端不一致，会弹出一个窗口，要求选择「使用云端方案」或「使用本机方案」：
+  前者同时采用云端的方案与目标作息，后者保留本机设置并将其推送至云端。
   安装包默认带 OCR（`desktop\requirements-ocr.txt`）；构建机上没装这套依赖时 `app.spec` 会自动产出无 OCR 的小包，
   运行时 `parse` 响应的 `ocr_available` 为 `false`，界面提示截图导入需要 OCR 版。
 - 只检查更新、不自动下载：建议直接跑 `user` 端即可，桌面版定位是「本机优先」。清单在
   `https://yiuki.me/desktop/latest.json`，用 `deploy\publish_desktop.ps1` 发布安装包与清单。
 
-- 没有管理员权限装 Inno Setup 时，把官方安装包用 `innoextract` 解到 `desktop\build\innosetup\`，`build.ps1` 会优先用它编译安装包。
-- 别从「网络位置」目录直接双击：.NET Framework 拒绝从网络区域加载托管 DLL（报 `Failed to resolve Python.Runtime.Loader.Initialize`）。
-  装到 `%PROGRAMFILES%\SleepSchedule`，或把整个 `SleepSchedule\` 目录移到 `%LOCALAPPDATA%\Programs\SleepSchedule` 再运行；
-  这种情况程序会弹窗说明原因，不会静默退出。
-- 也别从编码代理/沙箱的终端里启动 exe（例如在聊天里点文件卡片）：那类进程只能写自己的工作区，
-  会在建数据目录时报 `WinError 5`。用资源管理器、开始菜单或桌面快捷方式启动即可。
+- 安装 Inno Setup 需要管理员权限；无权限时可将官方安装包用 `innoextract` 解压到 `desktop\build\innosetup\`，`build.ps1` 会优先使用它编译安装包。
+- 避免从「网络位置」目录直接运行：.NET Framework 拒绝从网络区域加载托管 DLL（报 `Failed to resolve Python.Runtime.Loader.Initialize`）。
+  请安装到 `%PROGRAMFILES%\SleepSchedule`，或将整个 `SleepSchedule\` 目录移至 `%LOCALAPPDATA%\Programs\SleepSchedule` 后运行；
+  程序会弹窗说明原因，不会静默退出。
+- 同样避免从受限终端（例如聊天窗口中的文件卡片）启动 exe：此类进程只能写入自身工作区，
+  创建数据目录时会报 `WinError 5`。请从资源管理器、开始菜单或桌面快捷方式启动。
 
 设计、协议与验收清单见 [docs/DESKTOP.md](docs/DESKTOP.md)。
 
@@ -259,7 +259,7 @@ SQLite 放在 `/var/lib/sleep-schedule/app.db`），按需求**未启用 HTTPS**
 ## 免责声明
 
 本项目的作息建议来自**公开文献的群体统计规律**，仅供参考与自我管理使用，**不构成医疗建议**，也不能
-替代专业诊断与治疗。若你存在长期入睡困难、睡眠呼吸暂停、昼夜节律紊乱等睡眠障碍，请及时就医并遵从
+替代专业诊断与治疗。若存在长期入睡困难、睡眠呼吸暂停、昼夜节律紊乱等睡眠障碍，请及时就医并遵从
 医生的专业意见。使用本项目产生的任何后果由使用者自行承担。
 
 完整条款（中英双语）见 [DISCLAIMER.md](DISCLAIMER.md)。
