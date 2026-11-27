@@ -23,6 +23,9 @@ AppVerName={#MyAppName} {#MyVersion}
 AppPublisher=Yiuki
 DefaultDirName={autopf}\SleepSchedule
 DefaultGroupName={#MyAppName}
+; Do not inherit the group name from an earlier "Yiuki Sleep" install: the old
+; shortcuts kept stale names and one of them pointed at the removed exe.
+UsePreviousGroup=no
 DisableProgramGroupPage=yes
 OutputDir=..\..\dist\desktop
 OutputBaseFilename=SleepSchedule-setup-{#MyVersion}
@@ -58,6 +61,14 @@ Source: "..\..\dist\desktop\SleepSchedule\*"; DestDir: "{app}"; Flags: ignorever
 ; shortcuts and Explorer never point at a stale 0.1.x binary.
 [InstallDelete]
 Type: files; Name: "{app}\YiukiSleep.exe"
+; 0.2.1 and earlier used a group named "Yiuki Sleep" and a shortcut named
+; "sleepschedule"; remove those leftovers together with the stale desktop icon.
+Type: files; Name: "{commonprograms}\Yiuki Sleep\*.lnk"
+Type: files; Name: "{group}\Yiuki Sleep.lnk"
+Type: files; Name: "{group}\sleepschedule.lnk"
+Type: files; Name: "{group}\Uninstall Yiuki Sleep.lnk"
+Type: files; Name: "{group}\Uninstall sleepschedule.lnk"
+Type: files; Name: "{autodesktop}\Yiuki Sleep.lnk"
 
 [Dirs]
 ; %PROGRAMDATA%\SleepSchedule is shared machine-wide, and only this setup runs

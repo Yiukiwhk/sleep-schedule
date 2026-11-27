@@ -4,6 +4,15 @@
 [`docs/DESKTOP.md`](DESKTOP.md) 第 10、13 节；桌面端用 `deploy\publish_desktop.ps1` 发布到
 `https://yiuki.me/desktop/`，GitHub Release 的附件与此处列出的文件一致。
 
+## v0.2.4（2026-11-27）
+
+- **界面文案改为书面语**：`frontend/shared/i18n.js` 中 87 条偏口语的中英文案统一改为正式、精简的表述
+  （例如「至少两晚记录才能看推移」→「需至少两晚记录方可显示推移」），键名与占位符不变。
+- **安装器清理旧快捷方式**：升级时删除 0.2.1 及更早留下的「Yiuki Sleep」程序组快捷方式、旧桌面图标与旧 exe，
+  只保留一个「Sleep schedule」程序组；旧快捷方式曾指向已删除的 `YiukiSleep.exe`。
+- **图标**：应用 exe、安装包与快捷方式统一使用网页 favicon（月亮）。0.2.0/0.2.1 的 exe 无自定义图标，
+  显示的是 PyInstaller 默认图标；0.2.2 起已替换。
+
 ## v0.2.3（2026-11-26）
 
 已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.3>

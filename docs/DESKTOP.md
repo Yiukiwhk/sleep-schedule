@@ -765,3 +765,21 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
   改为 `{commonappdata}\SleepSchedule`；`tests/test_desktop_runtime.py` 同步断言并加迁移用例。
 - 版本 `0.2.3`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步，
   另加 `purge_old_tombstones` / `trim_sync_log` / `AUTOINCREMENT` / `LEGACY_APP_FOLDER` 四条自证。
+
+### 0.2.4（2026-11-27）
+
+文案与安装体验整理。
+
+- **界面文案改为书面语**：`frontend/shared/i18n.js` 中 87 条偏口语的键（中英各一份）统一改为正式、精简的
+  表述，例如 `records.overview.fewer` 由「至少两晚记录才能看推移」改为「需至少两晚记录方可显示推移」，
+  导入错误、同步提示、偏离提示等也一并收紧；占位符与键名不变，`scripts/check_i18n_keys.py` 仍为 0 missing、
+  0 placeholder mismatch，中英键数一致。脚本 `.tmp/formalize_i18n.py` 按 CRLF 原样改写，改完复查界面中文
+  里不再出现「吧/呢/你/我」这类口语成分。
+- **安装器清理旧快捷方式**：0.2.1 及更早的安装使用「Yiuki Sleep」程序组和 `sleepschedule.lnk`，
+  升级后残留在开始菜单里（其中一个指向已删除的 `YiukiSleep.exe`，图标显示为旧版默认图）。
+  `installer.iss` 增加 `UsePreviousGroup=no` 与 `[InstallDelete]`，安装时删除旧程序组里的快捷方式、
+  旧桌面图标和旧 exe；新安装只保留一个「Sleep schedule」程序组。
+- **图标说明**：应用 exe、安装包与快捷方式共用 `desktop/build/app.ico`（由 `frontend/user/favicon.svg`
+  渲染）。0.2.0/0.2.1 的 exe 没有自定义图标，显示的是 PyInstaller 默认图标（黄色图形，容易被看成蛇），
+  0.2.2 起已改为网页同款月亮图标。
+- 版本 `0.2.4`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步。
