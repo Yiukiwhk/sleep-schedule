@@ -71,6 +71,10 @@ def main():
         status = client.get("/api/sync/status", headers=headers)
         checks["status"] = status.status_code == 200 and status.json().get("ok") is True
         checks["status_version"] = bool(status.json().get("server_version"))
+        checks["status_retention"] = (
+            status.json().get("retention_months") == 24
+            and isinstance(status.json().get("retention_floor"), str)
+        )
         cid = "row-sleep-1"
         row = {
             "table": "sleep_records",
@@ -132,6 +136,25 @@ def main():
         old["payload"] = dict(row["payload"], note="older edit")
         stale = client.post("/api/sync/push", json={"cursor": cursor, "rows": [old]}, headers=headers)
         checks["tombstone_wins"] = stale.json().get("results", [{}])[0].get("status") == "stale"
+        # 服务端保留期之前的记录不落库：服务器会按 24 个月清理，写入没有意义。
+        ancient_day = (date.today() - timedelta(days=800)).isoformat()
+        ancient = {
+            "table": "sleep_records",
+            "client_row_id": "row-ancient",
+            "updated_at": iso(-3),
+            "payload": {"record_date": ancient_day, "sleep_time": "22:00", "wake_time": "06:00"},
+        }
+        far = client.post("/api/sync/push", json={"cursor": cursor, "rows": [ancient]}, headers=headers)
+        far_result = far.json().get("results", [{}])[0]
+        checks["out_of_retention_skipped"] = (
+            far.json().get("ok") is True and far_result.get("status") == "skipped"
+            and far_result.get("reason") == "sync.out_of_retention"
+        )
+        far_pull = client.get("/api/sync/pull", params={"cursor": 0}, headers=headers)
+        far_rows = far_pull.json().get("rows", [])
+        checks["out_of_retention_not_pulled"] = not any(
+            (item.get("payload") or {}).get("record_date") == ancient_day for item in far_rows
+        )
         account_blocked = client.post("/api/sync/account", json={"username": "desk-user", "password": "Passw0rd!43"})
         checks["account_requires_client"] = account_blocked.status_code == 403
         account = client.post(

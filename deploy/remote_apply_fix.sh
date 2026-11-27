@@ -667,7 +667,7 @@ grep_file "i18n.js: both hint texts exist" "$WEBROOT/shared/i18n.js" 'advice.anc
 
 echo "== 4am. the cloud sync API that desktop builds call is deployed =="
 # 桌面端绑定云端账号时调用 /api/sync/*；缺一个模块就 404，桌面端只会看到"绑定失败"。
-grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.2.5"'
+grep_file "version module shipped" "$APP_DIR/backend/app/version.py" 'VERSION = "0.2.6"'
 grep_file "main: desktop routers are conditional" "$APP_DIR/backend/app/main.py" 'include_desktop=settings.DESKTOP'
 grep_file "local guard: token header checked" "$APP_DIR/backend/app/core/local_guard.py" 'X-Local-Token'
 grep_file "sync engine: lww compare" "$APP_DIR/backend/app/services/sync_engine.py" 'def is_newer'
@@ -677,6 +677,8 @@ grep_file "sync engine: legacy rows backfilled" "$APP_DIR/backend/app/services/s
 grep_file "sync engine: plans travel too" "$APP_DIR/backend/app/services/sync_engine.py" 'def active_plan_row('
 grep_file "sync engine: settings row for target schedule" "$APP_DIR/backend/app/services/sync_engine.py" 'def active_settings_row('
 grep_file "sync engine: pushed settings reach the user row" "$APP_DIR/backend/app/services/sync_engine.py" 'def _apply_settings_to_user('
+grep_file "sync engine: rows outside retention are skipped" "$APP_DIR/backend/app/services/sync_engine.py" 'def retention_floor('
+grep_file "sync engine: skip reason is stable" "$APP_DIR/backend/app/services/sync_engine.py" 'sync.out_of_retention'
 grep_file "sync api: settings endpoint" "$APP_DIR/backend/app/api/sync_api.py" '@router.get("/settings")'
 grep_file "sync engine: schema columns migrated" "$APP_DIR/backend/app/db.py" '_migrate_sync_columns'
 grep_file "sync api: device tokens" "$APP_DIR/backend/app/api/sync_api.py" 'X-Device-Token'

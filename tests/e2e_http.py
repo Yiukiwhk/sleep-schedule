@@ -189,7 +189,7 @@ def main() -> int:
     check("读取单条记录", status == 200 and body.get("id") == record_id, f"{status} {body}")
 
     status, body, _ = alice.get("/api/records/meta")
-    check("记录元信息含保留策略", status == 200 and body.get("retention_months") == 6, f"{status} {body}")
+    check("记录元信息含保留策略", status == 200 and body.get("retention_months") == 24, f"{status} {body}")
 
     status, body, _ = alice.put(f"/api/records/{record_id}", {"wake_time": "08:30"})
     check(

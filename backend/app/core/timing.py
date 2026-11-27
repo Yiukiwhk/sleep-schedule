@@ -142,7 +142,7 @@ def clamp_minutes(value: int, low: int, high: int) -> int:
 
 
 def month_shift(value: datetime, months: int) -> datetime:
-    """向前/向后平移若干个月（用于 6 个月保留策略）。"""
+    """向前/向后平移若干个月（用于记录保留策略）。"""
     month_index = value.month - 1 + months
     year = value.year + month_index // 12
     month = month_index % 12 + 1

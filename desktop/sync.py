@@ -482,10 +482,17 @@ def _payload_for(table: str, row: Any) -> dict[str, Any]:
     }
 
 
-def collect_push_rows(session: Any, user_id: int, models: Any) -> list[dict[str, Any]]:
-    """收集需要推送的行：新建的（sync_rev == 0）或本地改过的。"""
+def collect_push_rows(
+    session: Any, user_id: int, models: Any, *, floor: str | None = None
+) -> list[dict[str, Any]]:
+    """收集需要推送的行：新建的（sync_rev == 0）或本地改过的。
+
+    floor 是服务端可保存的最早业务日期；更早的记录只留在本机，不参与同步。
+    """
     rows: list[dict[str, Any]] = []
     for row in session.query(models.SleepRecord).filter(models.SleepRecord.user_id == user_id):
+        if floor and (row.record_date or "") < floor:
+            continue
         if _dirty(row):
             if not row.client_row_id:
                 row.client_row_id = uuid.uuid4().hex
@@ -493,6 +500,8 @@ def collect_push_rows(session: Any, user_id: int, models: Any) -> list[dict[str,
                 row.sync_updated_at = _iso_ms(row.updated_at)
             rows.append(_row(table="sleep_records", row=row, models=models))
     for row in session.query(models.MealCheck).filter(models.MealCheck.user_id == user_id):
+        if floor and (row.check_date or "") < floor:
+            continue
         if _dirty(row):
             if not row.client_row_id:
                 row.client_row_id = uuid.uuid4().hex
@@ -841,11 +850,14 @@ def run(paths: dict[str, Path], *, make_snapshot: bool = True) -> dict[str, Any]
     headers = {"X-Device-Token": binding.get("token", "")}
     cursor = int(binding.get("cursor") or 0)
     pushed = 0
+    # 服务端保留期之外的数据不参与同步（服务器会清理，推上去也会被跳过）。
+    status, status_body = client.request("GET", "/api/sync/status", headers=headers)
+    floor = status_body.get("retention_floor") if status == 200 else None
     with db.SessionLocal() as session:
         user = session.query(models.User).order_by(models.User.id).first()
         if user is None:
             raise SyncError("本机还没有本地账号")
-        rows = collect_push_rows(session, user.id, models)
+        rows = collect_push_rows(session, user.id, models, floor=floor)
         session.commit()
     for index in range(0, len(rows), MAX_PUSH_ROWS):
         batch = rows[index : index + MAX_PUSH_ROWS]
@@ -895,7 +907,12 @@ def _mark_pushed(rows: list[dict[str, Any]], results: list[dict[str, Any]], mode
         for item in results
         if item.get("status") == "applied"
     }
-    if not revs:
+    skipped = {
+        (item.get("table"), item.get("client_row_id"))
+        for item in results
+        if item.get("status") == "skipped"
+    }
+    if not revs and not skipped:
         return
     mapping = {
         "sleep_records": models.SleepRecord,
@@ -911,6 +928,14 @@ def _mark_pushed(rows: list[dict[str, Any]], results: list[dict[str, Any]], mode
                 continue
             rev = revs.get((table, row["client_row_id"]))
             if not rev:
+                if (table, row["client_row_id"]) in skipped:
+                    found = (
+                        session.query(model)
+                        .filter(model.client_row_id == row["client_row_id"])
+                        .one_or_none()
+                    )
+                    if found is not None:
+                        found.sync_updated_at = row["updated_at"]
                 continue
             found = (
                 session.query(model)

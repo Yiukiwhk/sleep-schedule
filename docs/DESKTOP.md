@@ -72,7 +72,7 @@ desktop/
 | 建议引擎 | 有 | 有 | 本地算，离线可用 |
 | 三餐锚点 | 有 | 有 | 设置随同步走 |
 | 写入冷却 | 10 秒 | **0** | 单人本地无并发 |
-| 6 个月保留 | 有 | **24 个月**（`RETENTION_MONTHS=24`） | 本机单人，多留一年 |
+| 记录保留 | 6 个月 | **不自动删除**（`RETENTION_MONTHS=1200`） | 本机档案，不删数据 |
 | 注销账号 | 有 | 换成「清空本地数据」 | 无账号可注销 |
 | 云同步 | — | 有（可选） | §6 / §7 |
 | 截图 OCR | — | 有 | §8 |
@@ -190,6 +190,12 @@ desktop/
 为了清理后 rev 不回退重号，`sync_log.rev` 用 `AUTOINCREMENT` 主键（老库由
 `db._migrate_sync_log_autoincrement()` 原地重建表，保留全部行）。
 
+**保留期窗口**：服务端只保存最近 `RETENTION_MONTHS`（默认 24 个月）的睡眠记录，桌面端不自动删除。
+因此同步只处理「服务端可保存的最早业务日期」之后的行：`GET /api/sync/status` 返回 `retention_floor`
+（如 `2024-11-27`），客户端 push 前先用它过滤本机行（`collect_push_rows(..., floor=...)`），更早的记录
+只留在本机；服务端 `apply_rows()` 对越界行返回 `{"status": "skipped", "reason": "sync.out_of_retention"}`，
+不建行、不写 `sync_log`。客户端把这类行记为「已处理但不推进游标」，避免每次重推。
+
 **冲突**：最后写入胜（LWW），比较 `updated_at`；相等时比较 `client_id` 字符串，大者胜（确定性）。
 墓碑优先于更早的更新；墓碑与更新同一毫秒时，墓碑胜。
 
@@ -199,7 +205,7 @@ desktop/
 |---|---|---|
 | POST | `/api/sync/devices` | 绑定设备，返回 `device_token`（仅一次） |
 | DELETE | `/api/sync/devices/{id}` | 吊销 |
-| GET | `/api/sync/status` | 返回 `{ok, server_version, min_client, schema_version, quota, violations[]}` |
+| GET | `/api/sync/status` | 返回 `{ok, server_version, min_client, schema_version, retention_months, retention_floor, quota, new_account_grace, violations[]}` |
 | POST | `/api/sync/push` | `{cursor, rows:[{table, client_row_id, updated_at, deleted_at, payload}]}` → 逐行结果 + 新游标 |
 | GET | `/api/sync/pull?cursor=` | 增量拉取 + `has_more` |
 | GET | `/api/sync/plan` | 云端当前活跃方案（绑定后让用户选本机/云端） |
@@ -378,7 +384,7 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 改动（只动后端 + 测试，前端未改；`/api/auth/me` 在桌面模式返回 200 就足以跳过登录页）：
 
 - `backend/app/config.py`：新增 `MODE`、`DESKTOP`（`MODE == "desktop"`）、`DESKTOP_USERNAME`（默认 `本机`）；
-  `WRITE_COOLDOWN_SECONDS` 在桌面模式默认 `0`，`RETENTION_MONTHS` 默认 `24`（服务器版仍是 6）。
+  `WRITE_COOLDOWN_SECONDS` 在桌面模式默认 `0`，`RETENTION_MONTHS` 桌面默认 `1200`（不删）、服务器默认 `24`（见 0.2.6）。
 - `backend/app/desktop.py`（新增）：`ensure_local_user()` 幂等建/取本地档案——`username="本机"`、
   `is_admin=False`、随机不可用密码（`hash_password(secrets.token_urlsafe(32))`），并发撞唯一索引时重读；
   `local_user(db)` 供依赖注入使用。
@@ -397,7 +403,7 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 | 项 | 结果 |
 |---|---|
 | `pytest tests\test_advice_engine.py tests\test_desktop_mode.py -q -p no:cacheprovider` | 34 passed |
-| `SSP_MODE=desktop` 起真实 uvicorn（`run.py --port 18012`） | `/` 200、`/user/` 200、`/admin/` 404、`/api/admin/stats` 404、`/api/auth/me` 200 且 `username=本机`/`is_admin=false`、`/api/records/meta` 冷却 0 / 保留 24 月（P0 时曾为 1200，0.2.5 起改为 24）、连续两次写入 201/201（无 429）、`/api/auth/login` 与 `/api/auth/password` 404 |
+| `SSP_MODE=desktop` 起真实 uvicorn（`run.py --port 18012`） | `/` 200、`/user/` 200、`/admin/` 404、`/api/admin/stats` 404、`/api/auth/me` 200 且 `username=本机`/`is_admin=false`、`/api/records/meta` 冷却 0 / 保留 1200 月（桌面不删；P0 时即 1200，0.2.5 曾改为 24，0.2.6 改回）、连续两次写入 201/201（无 429）、`/api/auth/login` 与 `/api/auth/password` 404 |
 | `deploy\accept_local.ps1`（服务端模式全量） | `local acceptance: ALL PASS`（e2e 74 项全过） |
 | 8 个 `scripts/` 静态检查 | 全部 exit 0 |
 
@@ -796,3 +802,25 @@ VirtualBox（免费）/ VMware Workstation Player（个人免费）/ Hyper-V（W
 - `tests/test_desktop_mode.py` 的断言改为 `retention_months == 24`；`docs/CONFIGURATION.md` 的
   `SSP_RETENTION_MONTHS` 行注明桌面模式默认 24。
 - 版本 `0.2.5`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步。
+- **0.2.6 已撤回本条的桌面部分**：桌面改为「不自动删除」（`RETENTION_MONTHS=1200`），
+  服务器保留 24 个月；同步只处理服务端可保存范围内的行，详见下一条。
+
+### 0.2.6（2026-11-27）
+
+保留期与同步范围对齐：桌面不删数据，服务器只保存 24 个月。
+
+- **桌面不自动删除**：`backend/app/config.py` 改为
+  `RETENTION_MONTHS = _env_int("RETENTION_MONTHS", 1200 if MODE == "desktop" else 24)`，
+  即桌面 `retention_months=1200`（约 100 年，等同不删），服务器 `24`。桌面仍不启动周期清理任务。
+- **同步只处理服务端可保存范围**：`sync_engine.retention_floor(today)` 由 `month_shift(-RETENTION_MONTHS)`
+  算出最早业务日期；`GET /api/sync/status` 返回 `retention_floor` 与 `retention_months`；
+  客户端 `run()` 先取 status，把 `retention_floor` 传给 `collect_push_rows(..., floor=...)`，
+  更早的记录只留在本机；服务端 `apply_rows()` 对越界行返回
+  `{"status": "skipped", "reason": "sync.out_of_retention"}`，不建行、不写 `sync_log`；
+  客户端把被跳过的行标记为已处理（只对齐 `sync_updated_at`，不推进 `sync_rev`），避免每次重推。
+- **测试**：`tests/test_desktop_mode.py` 断言桌面 `retention_months == 1200`；`tests/test_sync_protocol.py`
+  增加 `status_retention`（服务器 24 且 `retention_floor` 为日期串）与越界推送（`status=skipped`、
+  `reason=sync.out_of_retention`、pull 不到）；`tests/test_sync_convergence.py` 增加
+  `test_rows_outside_server_retention_stay_local`（本机 3 条、push 2 条记录 + 1 条设置、另一台只拉到 2 条、本机仍 3 条）。
+- 版本 `0.2.6`：`backend/app/version.py`、`desktop/__init__.py`、`deploy/remote_apply_fix.sh` 的 4am grep 同步，
+  并新增自证 `def retention_floor(` 与 `sync.out_of_retention`。

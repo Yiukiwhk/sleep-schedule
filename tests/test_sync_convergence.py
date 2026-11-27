@@ -16,6 +16,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -225,6 +226,38 @@ def test_tombstone_wins_and_never_resurrects(server):
     # Second sync must not bring the tombstoned row back.
     again = _run_client(server, "tomb-b", [{"op": "run"}, {"op": "count"}])
     assert again[1]["alive"] == 4
+
+
+@pytest.mark.desktop
+def test_rows_outside_server_retention_stay_local(server):
+    """24 个月之前的记录只留在本机，不进云端、也不传到另一台机器。"""
+    user = "window-user"
+    ancient = (datetime.now().date() - timedelta(days=800)).isoformat()
+    first = _run_client(
+        server,
+        "window-a",
+        [
+            {"op": "init", "count": 2, "offset": 600, "prefix": "recent"},
+            {"op": "init", "count": 1, "offset": 800, "prefix": "ancient"},
+            _bind(server, create=True, user=user),
+            {"op": "run"},
+            {"op": "count"},
+        ],
+    )
+    # 本地 3 条都在，但只推送了在保留期内的 2 条。
+    assert first[4]["total"] == 3
+    # 2 条在保留期内的记录 + 1 条 user_settings，越界那条只留在本机。
+    assert first[3]["report"]["pushed"] == 3
+
+    pulled = _run_client(
+        server, "window-b", [_bind(server, user=user), {"op": "run"}, {"op": "count"}, {"op": "dates"}]
+    )
+    assert pulled[2]["alive"] == 2
+    assert ancient not in pulled[3]["alive"]
+
+    # 本机仍然保留那条旧记录（桌面版不按保留期删除）。
+    kept = _run_client(server, "window-a", [{"op": "count"}])
+    assert kept[0]["total"] == 3
 
 
 @pytest.mark.desktop

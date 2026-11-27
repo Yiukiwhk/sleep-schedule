@@ -732,7 +732,7 @@ def run_cleanup_now(
     admin: User = Depends(current_admin),
     ctx: RequestContext = Depends(client_meta),
 ) -> MessageOut:
-    """手动触发一次保留策略清理（6 个月前的记录、过期会话、旧日志）。"""
+    """手动触发一次保留策略清理（超过保留期的记录、过期会话、旧日志）。"""
     result = retention.run_cleanup()
     logkit.log_event(
         "admin_cleanup",

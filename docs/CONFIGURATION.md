@@ -73,7 +73,7 @@
 | `SSP_LOGIN_LOCK_SECONDS` | `900`（15 分钟） | 锁定持续时间。 |
 | `SSP_LOGIN_FAILURE_WINDOW_SECONDS` | `900`（15 分钟） | 失败计数窗口，窗口外的失败不计入。 |
 | `SSP_WRITE_COOLDOWN_SECONDS` | `10` | 同一用户两次写操作的冷却秒数，命中返回 429 `error.write_too_fast`；铺数据脚本可临时设为 `0`。 |
-| `SSP_RETENTION_MONTHS` | `6` | 睡眠记录保留月数，超期由清理任务删除；`SSP_MODE=desktop` 时默认 `24`。 |
+| `SSP_RETENTION_MONTHS` | `24` | 睡眠记录保留月数，超期由清理任务删除。服务器默认 `24`；桌面模式默认 `1200`（等同不删）。 |
 | `SSP_CLEANUP_INTERVAL_SECONDS` | `21600`（6 小时） | 清理任务运行间隔（最小 60 秒）。 |
 | `SSP_DEFAULT_PAGE_SIZE` | `20` | 分页默认每页条数。 |
 | `SSP_MAX_PAGE_SIZE` | `100` | 分页每页最大条数（超出会被夹到该值）。 |

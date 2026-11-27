@@ -86,8 +86,8 @@ class Settings:
     WRITE_COOLDOWN_SECONDS: int = _env_int("WRITE_COOLDOWN_SECONDS", 0 if MODE == "desktop" else 10)
 
     # ---------- 数据保留 ----------
-    # 桌面版数据只在本机，保留期放宽到 24 个月（服务器版仍是 6 个月）。
-    RETENTION_MONTHS: int = _env_int("RETENTION_MONTHS", 24 if MODE == "desktop" else 6)
+    # 服务器保留 24 个月（多用户共享磁盘）；桌面版数据只在本机，不自动删除。
+    RETENTION_MONTHS: int = _env_int("RETENTION_MONTHS", 1200 if MODE == "desktop" else 24)
     CLEANUP_INTERVAL_SECONDS: int = _env_int("CLEANUP_INTERVAL_SECONDS", 6 * 3600)
 
     # ---------- 分页 ----------

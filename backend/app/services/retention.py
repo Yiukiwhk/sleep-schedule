@@ -1,4 +1,4 @@
-"""数据保留策略：每个用户仅保留最近 6 个月的睡眠记录。"""
+"""数据保留策略：每个用户仅保留最近 RETENTION_MONTHS（默认 24）个月的睡眠记录。"""
 from __future__ import annotations
 
 from datetime import date

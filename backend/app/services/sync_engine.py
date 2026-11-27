@@ -22,6 +22,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..config import settings
+from ..core.timing import month_shift
 from ..version import MIN_SUPPORTED, SCHEMA_VERSION, VERSION
 
 SYNC_TABLES = ("sleep_records", "meal_checks", "user_settings", "advice_plans")
@@ -98,6 +100,15 @@ def parse_time(value: Any) -> str | None:
 # --------------------------------------------------------------------------- #
 # Row payloads
 # --------------------------------------------------------------------------- #
+def retention_floor(today: date | None = None) -> str:
+    """服务端可保存的最早业务日期（YYYY-MM-DD）；更早的行不参与同步。"""
+    base = today or datetime.now(timezone.utc).date()
+    shifted = month_shift(
+        datetime(base.year, base.month, base.day), -settings.RETENTION_MONTHS
+    )
+    return shifted.date().isoformat()
+
+
 def record_payload(row: models.SleepRecord) -> dict[str, Any]:
     return {
         "record_date": row.record_date,
@@ -422,12 +433,27 @@ def apply_rows(
     """把校验通过的行落到库；返回 (逐行结果, 本次最大 rev)。"""
     results: list[dict[str, Any]] = []
     cursor = 0
+    floor = retention_floor(today)
     for row in rows:
         table = str(row["table"])
         cid = str(row["client_row_id"])
         incoming = parse_iso_ms(row.get("updated_at"))
         deleted = parse_iso_ms(row.get("deleted_at"))
         payload = row.get("payload") or {}
+        if table in ("sleep_records", "meal_checks"):
+            key = "record_date" if table == "sleep_records" else "check_date"
+            business_date = payload.get(key)
+            if isinstance(business_date, str) and business_date < floor:
+                # 服务器超出保留期的数据会被清理，写入没有意义，直接跳过。
+                results.append(
+                    {
+                        "table": table,
+                        "client_row_id": cid,
+                        "status": "skipped",
+                        "reason": "sync.out_of_retention",
+                    }
+                )
+                continue
         if table == "sleep_records":
             existing = _find_record(session, user.id, cid, payload)
         elif table == "meal_checks":
@@ -697,6 +723,8 @@ def status_payload(user: models.User, *, now: datetime | None = None) -> dict[st
         "server_version": VERSION,
         "min_client": MIN_SUPPORTED,
         "schema_version": SCHEMA_VERSION,
+        "retention_months": settings.RETENTION_MONTHS,
+        "retention_floor": retention_floor(current.date()),
         "quota": {"rows_per_push": MAX_ROWS_PER_PUSH, "payload_bytes": MAX_PAYLOAD_BYTES},
         "new_account_grace": fresh,
         "violations": [],

@@ -185,10 +185,10 @@ def test_desktop_mode_has_no_login_no_admin_and_no_cooldown() -> None:
     assert result["me"]["username"] == "本机"
     assert result["me"]["is_admin"] is False
     assert result["me"]["is_active"] is True
-    # 单机单人：写入不冷却、保留期放宽到 24 个月（服务器版仍是 6 个月）。
+    # 单机单人：写入不冷却、本机数据不按保留期删除（1200 个月≈不删）。
     assert result["meta_status"] == 200
     assert result["meta"]["write_cooldown_seconds"] == 0
-    assert result["meta"]["retention_months"] == 24
+    assert result["meta"]["retention_months"] == 1200
     assert result["create"] == [201, 201]
     # 登录/改密入口按不存在处理。
     assert result["login"] == 404

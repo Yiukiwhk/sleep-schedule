@@ -4,12 +4,29 @@
 [`docs/DESKTOP.md`](DESKTOP.md) 第 10、13 节；桌面端用 `deploy\publish_desktop.ps1` 发布到
 `https://yiuki.me/desktop/`，GitHub Release 的附件与此处列出的文件一致。
 
+## v0.2.6（2026-11-27）
+
+保留期与同步范围对齐。
+
+- **桌面版不自动删除数据**：`RETENTION_MONTHS` 桌面端为 `1200`（约 100 年，等同不删），服务器端为 `24`
+  （24 个月）。界面显示的保留期随运行形态变化。
+- **云同步只处理服务器可保存范围内的记录**：客户端 push 前先读 `GET /api/sync/status` 的
+  `retention_floor`，更早的记录只留在本机；服务器对越界行返回 `skipped` + `sync.out_of_retention`，
+  不写入数据库。这样两端首次同步不会再出现「本机有、云端缺」的整段历史差异。
+- 无界面与协议破坏性变更，旧客户端仍可同步（只是不会主动过滤）。
+
+| 文件 | 大小（字节） | SHA-256 |
+| --- | --- | --- |
+| `SleepSchedule-setup-0.2.6.exe` | 72,006,309 | `5a58053cad0e646423ee35dce844b5c43d6abdfbda647e984de8b977d3b81e53` |
+| `SleepSchedule-portable-0.2.6.zip` | 96,813,933 | `61d27fb1aa79d7b04482f3af89fc3361457886ba3193486b2134fb9a691ea4b5` |
+
 ## v0.2.5（2026-11-27）
 
 已发布：<https://github.com/Yiukiwhk/sleep-schedule/releases/tag/v0.2.5>
 
 - **桌面版数据保留期由 1200 个月改为 24 个月**：服务器版仍为 6 个月。桌面版不启动周期清理任务，
   超出 24 个月的记录会在下次启动时删除；设置页与 `/api/runtime` 显示的保留期同步变为 24 个月。
+  （v0.2.6 已撤回桌面部分：桌面不再删除数据，服务器改为 24 个月。）
 - 无界面与协议变更，升级可直接覆盖安装。
 
 | 文件 | 大小（字节） | SHA-256 |
